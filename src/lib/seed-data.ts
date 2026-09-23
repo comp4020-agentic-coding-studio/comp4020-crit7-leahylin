@@ -65,6 +65,8 @@ export const COURSES: SeedCourse[] = [
 export type SeedRequirement = {
   key: string;
   label: string;
+  /** See the `kind` column in schema.ts. Omitted means "allocating". */
+  kind?: "allocating" | "floor" | "total";
   /** The rule in the words Programs and Courses uses. */
   detail: string;
   requiredUnits: number;
@@ -93,6 +95,7 @@ export const REQUIREMENTS: SeedRequirement[] = [
   {
     key: "mcomp-total",
     label: "Total units",
+    kind: "total",
     detail: "The Master of Computing requires the completion of 96 units.",
     requiredUnits: 96,
     sortOrder: 10,
@@ -147,6 +150,7 @@ export const REQUIREMENTS: SeedRequirement[] = [
   {
     key: "mcomp-min-8000-comp",
     label: "8000-level COMP minimum",
+    kind: "floor",
     detail:
       "A minimum of 24 units must come from the completion of 8000-level COMP courses. " +
       "This is a floor across the whole degree, not an extra allocation of units.",

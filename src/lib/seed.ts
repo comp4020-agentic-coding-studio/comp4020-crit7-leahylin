@@ -69,6 +69,7 @@ export function seed(db: BetterSQLite3Database): void {
           detail: requirement.detail,
           requiredUnits: requirement.requiredUnits,
           sortOrder: requirement.sortOrder,
+          kind: requirement.kind ?? "allocating",
           subjects: requirement.subjects ?? null,
           minLevel: requirement.minLevel ?? null,
           maxLevel: requirement.maxLevel ?? null,

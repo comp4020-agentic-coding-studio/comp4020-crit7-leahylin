@@ -1,0 +1,1 @@
+ALTER TABLE `requirements` ADD `kind` text DEFAULT 'allocating' NOT NULL;

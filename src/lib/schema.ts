@@ -57,6 +57,21 @@ export const requirements = sqliteTable("requirements", {
   detail: text(),
   requiredUnits: int("required_units").notNull(),
   sortOrder: int("sort_order").notNull().default(0),
+  // How this requirement consumes units, which is the difference between
+  // reporting coverage and reporting a real audit:
+  //
+  //   allocating — spends units. Each course counts toward at most one
+  //                allocating requirement, so a core course cannot also
+  //                fill the open elective bucket.
+  //   floor      — a minimum across the whole degree ("at least 24 units of
+  //                8000-level COMP"). Counts every matching course and
+  //                spends nothing; overlapping with allocating buckets is
+  //                the intended reading, not a bug.
+  //   total      — the degree's size. Counts everything, spends nothing,
+  //                and is the one bucket meant to be exceeded.
+  kind: text({ enum: ["allocating", "floor", "total"] })
+    .notNull()
+    .default("allocating"),
   // The filter half of a pool. All nullable; null means unconstrained.
   // `subjects` is a comma-separated list ("COMP,ENGN") — a deliberate
   // simplification over a fourth table for at most two values.
