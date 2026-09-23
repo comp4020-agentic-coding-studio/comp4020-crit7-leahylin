@@ -1,3 +1,4 @@
+import { inArray, sql } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import {
   courses,
@@ -25,13 +26,28 @@ import {
  * Three constraints shape how this is written, each verified against this
  * repo's exact dependency versions rather than assumed:
  *
- *  1. It must be idempotent. Reference data is re-asserted on every boot,
- *     including boots against the Fly volume that already holds it. Every
- *     insert is `onConflictDoNothing` against a real UNIQUE constraint on a
- *     natural key (course code, requirement key, plan slug), so re-seeding
- *     is a no-op per row. A "skip it all if the table is non-empty" guard
- *     would be cheaper but wrong — it silently refuses to add the 25th
- *     course to a database that already holds 24.
+ *  1. Reference data UPSERTS; user data does not. This distinction is the
+ *     whole game, and getting it wrong is invisible locally.
+ *
+ *     The degree's definition is authoritative in code, so courses and
+ *     requirements are written with `onConflictDoUpdate` on their natural
+ *     key: a boot against a database that already holds them corrects them.
+ *     `onConflictDoNothing` was the first attempt and was a real bug —
+ *     adding the `kind` column left every existing row on its 'allocating'
+ *     default, so the deployed app (whose volume outlives the deploy) would
+ *     have treated the 96-unit total and the 8000-level floor as allocating
+ *     buckets, while a fresh local database looked perfectly correct.
+ *
+ *     Pool rows are rebuilt rather than upserted, because their columns ARE
+ *     their key: an upsert cannot notice a course that was REMOVED from a
+ *     requirement's pool, and a stale include row silently widens a rule.
+ *
+ *     The demo plan stays `onConflictDoNothing`: it belongs to a user, and
+ *     re-asserting it every boot would undo their edits.
+ *
+ *     A "skip it all if the table is non-empty" guard would be cheaper than
+ *     any of this and wrong in the same direction — it silently refuses to
+ *     add the 25th course to a database that already holds 24.
  *
  *  2. Insert order is load-bearing. better-sqlite3 is compiled with
  *     SQLITE_DEFAULT_FOREIGN_KEYS=1, so foreign keys are enforced even
@@ -58,7 +74,15 @@ export function seed(db: BetterSQLite3Database): void {
           level: levelOf(course.code),
         })),
       )
-      .onConflictDoNothing()
+      .onConflictDoUpdate({
+        target: courses.code,
+        set: {
+          title: sql`excluded.title`,
+          units: sql`excluded.units`,
+          subject: sql`excluded.subject`,
+          level: sql`excluded.level`,
+        },
+      })
       .run();
 
     tx.insert(requirements)
@@ -75,7 +99,19 @@ export function seed(db: BetterSQLite3Database): void {
           maxLevel: requirement.maxLevel ?? null,
         })),
       )
-      .onConflictDoNothing()
+      .onConflictDoUpdate({
+        target: requirements.key,
+        set: {
+          label: sql`excluded.label`,
+          detail: sql`excluded.detail`,
+          kind: sql`excluded.kind`,
+          requiredUnits: sql`excluded.required_units`,
+          sortOrder: sql`excluded.sort_order`,
+          subjects: sql`excluded.subjects`,
+          minLevel: sql`excluded.min_level`,
+          maxLevel: sql`excluded.max_level`,
+        },
+      })
       .run();
 
     // The join rows need primary keys, and an insert that conflicted
@@ -125,8 +161,16 @@ export function seed(db: BetterSQLite3Database): void {
       }
     }
 
+    // Rebuilt, not upserted: a pool row's columns are its whole identity,
+    // so an upsert can add a course to a pool but never remove one.
+    const seededRequirementIds = [...requirementIdByKey.values()];
+    if (seededRequirementIds.length > 0) {
+      tx.delete(requirementCourses)
+        .where(inArray(requirementCourses.requirementId, seededRequirementIds))
+        .run();
+    }
     if (poolRows.length > 0) {
-      tx.insert(requirementCourses).values(poolRows).onConflictDoNothing().run();
+      tx.insert(requirementCourses).values(poolRows).run();
     }
 
     // --- user data: kept deliberately separate -------------------------
