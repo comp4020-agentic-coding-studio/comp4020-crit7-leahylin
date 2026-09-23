@@ -7,7 +7,13 @@ import {
   resolvePool,
 } from "../src/lib/progress";
 import type { Course, Requirement } from "../src/lib/schema";
-import { COURSES, REQUIREMENTS, levelOf, subjectOf } from "../src/lib/seed-data";
+import {
+  COURSES,
+  REQUIREMENTS,
+  SPECIALISATIONS,
+  levelOf,
+  subjectOf,
+} from "../src/lib/seed-data";
 
 // These tests drive the engine with the REAL seeded MCOMP rules, not toy
 // fixtures, so they check the degree as modelled and not merely the
@@ -26,6 +32,12 @@ const courses: Course[] = COURSES.map((course, index) => ({
   level: levelOf(course.code),
 }));
 
+const specialisationId = new Map(
+  SPECIALISATIONS.map((specialisation, index) => [specialisation.slug, index + 1] as const),
+);
+const PCOM = specialisationId.get("professional-computing") ?? 0;
+const UNMODELLED = specialisationId.get("machine-learning") ?? 0;
+
 const requirements: Requirement[] = REQUIREMENTS.map((requirement, index) => ({
   id: index + 1,
   key: requirement.key,
@@ -37,6 +49,10 @@ const requirements: Requirement[] = REQUIREMENTS.map((requirement, index) => ({
   subjects: requirement.subjects ?? null,
   minLevel: requirement.minLevel ?? null,
   maxLevel: requirement.maxLevel ?? null,
+  specialisationId:
+    requirement.specialisation === undefined
+      ? null
+      : (specialisationId.get(requirement.specialisation) ?? null),
 }));
 
 function courseId(code: string): number {
@@ -73,11 +89,13 @@ function plan(...entries: (string | [string, "completed" | "planned"])[]): PlanE
 }
 
 /** Evaluate a plan and index the requirements by key. */
-function run(entries: PlanEntry[]) {
-  const result = evaluatePlan(courses, requirements, pools, entries);
+function run(entries: PlanEntry[], declared: number | null = null) {
+  const result = evaluatePlan(courses, requirements, pools, entries, declared);
   const byKey = new Map(result.requirements.map((r) => [r.key, r]));
   return {
     ...result,
+    has: (key: string) => byKey.has(key),
+    keys: () => [...byKey.keys()],
     get(key: string): RequirementProgress {
       const found = byKey.get(key);
       if (!found) throw new Error(`no requirement "${key}" in the result`);
@@ -130,10 +148,35 @@ describe("the seeded MCOMP rules are internally consistent", () => {
     expect(nonProjectUnits).toBeGreaterThanOrEqual(requirement.requiredUnits);
   });
 
-  it("marks exactly one total rule and one floor rule", () => {
-    const kinds = requirements.map((r) => r.kind);
-    expect(kinds.filter((k) => k === "total")).toHaveLength(1);
-    expect(kinds.filter((k) => k === "floor")).toHaveLength(1);
+  it("marks one total rule, and one floor per scope", () => {
+    expect(requirements.filter((r) => r.kind === "total")).toHaveLength(1);
+    // One floor across the degree, plus one inside each modelled
+    // specialisation — the two are read differently, see the scoping tests.
+    const floors = requirements.filter((r) => r.kind === "floor");
+    expect(floors.filter((r) => r.specialisationId === null)).toHaveLength(1);
+    expect(floors.filter((r) => r.specialisationId !== null)).toHaveLength(
+      SPECIALISATIONS.filter((specialisation) => specialisation.modelled).length,
+    );
+  });
+
+  it("gives every modelled specialisation exactly 24 units of allocating rules", () => {
+    for (const specialisation of SPECIALISATIONS.filter((s) => s.modelled)) {
+      const id = specialisationId.get(specialisation.slug);
+      const units = requirements
+        .filter((r) => r.specialisationId === id && r.kind === "allocating")
+        .reduce((sum, r) => sum + r.requiredUnits, 0);
+      expect(units, specialisation.slug).toBe(24);
+    }
+  });
+
+  it("seeds no rules for a specialisation it admits it has not modelled", () => {
+    for (const specialisation of SPECIALISATIONS.filter((s) => !s.modelled)) {
+      const id = specialisationId.get(specialisation.slug);
+      expect(
+        requirements.filter((r) => r.specialisationId === id),
+        specialisation.slug,
+      ).toHaveLength(0);
+    }
   });
 });
 
@@ -338,6 +381,7 @@ describe("exclusions", () => {
     subjects: "COMP",
     minLevel: 8000,
     maxLevel: 8999,
+    specialisationId: null,
   };
   const exclusions: PoolRow[] = ["COMP8715", "COMP8800", "COMP8830"].map((code) => ({
     requirementId: 900,
@@ -405,9 +449,97 @@ describe("exclusions", () => {
   });
 });
 
+
+describe("specialisations", () => {
+  const PCOM_PLAN = ["COMP6120", "ENGN8100", "COMP6240", "COMP8600"];
+
+  it("hides a specialisation's rules until it is declared", () => {
+    const undeclared = run(plan("COMP6120"));
+    expect(undeclared.has("pcom-core")).toBe(false);
+    expect(undeclared.specialisationModelled).toBe(false);
+    // The program-level rules are all still there.
+    expect(undeclared.has("mcomp-core")).toBe(true);
+  });
+
+  it("shows them once it is declared", () => {
+    const declared = run(plan("COMP6120"), PCOM);
+    expect(declared.has("pcom-core")).toBe(true);
+    expect(declared.has("pcom-elective")).toBe(true);
+    expect(declared.has("pcom-8000-comp")).toBe(true);
+    expect(declared.has("pcom-min-8000")).toBe(true);
+    expect(declared.specialisationModelled).toBe(true);
+  });
+
+  it("reports an unmodelled specialisation as declared but ruleless", () => {
+    // Six of the seven could not be sourced. Declaring one must not look
+    // like a modelled specialisation with nothing done.
+    const result = run(plan("COMP6120"), UNMODELLED);
+    expect(result.specialisationModelled).toBe(false);
+    expect(result.keys().every((key) => !key.startsWith("pcom-"))).toBe(true);
+  });
+
+  it("brings the degree's allocating rules to exactly 96 units once declared", () => {
+    // 72 units of program rules + 24 of specialisation. This is the sum the
+    // generic "24 units from a specialisation" bucket used to stand in for.
+    const declared = run([], PCOM);
+    const allocating = declared.requirements
+      .filter((r) => r.kind === "allocating")
+      .reduce((sum, r) => sum + r.requiredUnits, 0);
+    expect(allocating).toBe(96);
+  });
+
+  it("credits the specialisation's own rules", () => {
+    const result = run(plan(...PCOM_PLAN), PCOM);
+    expect(result.get("pcom-core").completedUnits).toBe(12);
+    expect(result.get("pcom-elective").completedUnits).toBe(6);
+    expect(result.get("pcom-8000-comp").completedUnits).toBe(6);
+  });
+
+  it("excludes the project courses from the specialisation's 8000-level COMP rule", () => {
+    // "any 8000 level COMP coded course excluding COMP8715, COMP8800 and
+    // COMP8830" — the rule the exclude role exists for.
+    expect(run(plan("COMP8830"), PCOM).get("pcom-8000-comp").countedUnits).toBe(0);
+    expect(run(plan("COMP8800"), PCOM).get("pcom-8000-comp").countedUnits).toBe(0);
+    expect(run(plan("COMP8600"), PCOM).get("pcom-8000-comp").completedUnits).toBe(6);
+  });
+
+  it("scopes the specialisation's 8000-level floor to its own courses", () => {
+    // ENGN8100 (credited to pcom-core) and COMP8600 (to pcom-8000-comp) are
+    // both 8000-level, so the floor is exactly met.
+    const result = run(plan(...PCOM_PLAN), PCOM);
+    expect(result.get("pcom-min-8000").countedUnits).toBe(12);
+    expect(result.get("pcom-min-8000").satisfied).toBe(true);
+  });
+
+  it("does not let an 8000-level core course count toward that floor", () => {
+    // COMP8260 is 8000-level and compulsory, but it belongs to the program's
+    // core, not to the specialisation's 24 units. A degree-wide floor would
+    // wrongly count it; this one is scoped.
+    const withCore = run(plan(...PCOM_PLAN, "COMP8260"), PCOM);
+    expect(withCore.get("mcomp-core").countedCodes).toContain("COMP8260");
+    expect(withCore.get("pcom-min-8000").countedUnits).toBe(12);
+    expect(withCore.get("pcom-min-8000").countedCodes).toEqual(["COMP8600", "ENGN8100"]);
+  });
+
+  it("still counts that core course toward the degree-wide 8000-level floor", () => {
+    // The contrast: the program's floor is not scoped, so it takes both.
+    const result = run(plan(...PCOM_PLAN, "COMP8260"), PCOM);
+    expect(result.get("mcomp-min-8000-comp").countedCodes).toEqual(["COMP8260", "COMP8600"]);
+  });
+});
+
 describe("evaluatePlan", () => {
-  it("returns every requirement in the degree's display order", () => {
+  it("returns the program's requirements in display order when nothing is declared", () => {
+    const programRules = REQUIREMENTS.filter((r) => r.specialisation === undefined);
     const result = run(plan("COMP6250"));
+    expect(result.requirements).toHaveLength(programRules.length);
+    expect(result.requirements.map((r) => r.key)).toEqual(
+      [...programRules].sort((a, b) => a.sortOrder - b.sortOrder).map((r) => r.key),
+    );
+  });
+
+  it("returns the program's and the specialisation's once one is declared", () => {
+    const result = run(plan("COMP6250"), PCOM);
     expect(result.requirements).toHaveLength(REQUIREMENTS.length);
     expect(result.requirements.map((r) => r.key)).toEqual(
       [...REQUIREMENTS].sort((a, b) => a.sortOrder - b.sortOrder).map((r) => r.key),

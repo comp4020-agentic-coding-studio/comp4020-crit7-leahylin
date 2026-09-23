@@ -1,5 +1,10 @@
 ---
-import { getPlan, listCourses, planProgress } from "../../lib/db";
+import {
+  getPlan,
+  listCourses,
+  listSpecialisations,
+  planProgress,
+} from "../../lib/db";
 import "../../styles.css";
 
 const { slug } = Astro.params;
@@ -18,6 +23,14 @@ const subjects = [...new Set(available.map((course) => course.subject))].sort();
 
 const total = progress.requirements.find((r) => r.kind === "total");
 const structural = progress.requirements.filter((r) => r.kind !== "total");
+
+const allSpecialisations = listSpecialisations();
+const declared = allSpecialisations.find((s) => s.id === plan.specialisationId);
+
+// With no specialisation declared, 24 of the degree's 96 units have no rules
+// attached, so the panel below genuinely cannot account for them. Say so
+// rather than let a reader infer the requirements shown are all of them.
+const unaccounted = progress.specialisationModelled ? 0 : 24;
 
 function verdict(r: (typeof progress.requirements)[number]): string {
   if (r.satisfied) return "done";
@@ -72,12 +85,59 @@ function verdict(r: (typeof progress.requirements)[number]): string {
         )
       }
 
+      <h2>Specialisation</h2>
+      <p class="note">
+        One specialisation is a compulsory part of the Master of Computing, and
+        it is worth 24 of the 96 units. Declaring one brings its own
+        requirements into the panel below.
+      </p>
+      <form method="post" action="/api/plan-specialisation" class="stack">
+        <input type="hidden" name="slug" value={plan.slug} />
+        <label for="specialisationId">Declared specialisation</label>
+        <select id="specialisationId" name="specialisationId">
+          <option value="">None declared</option>
+          {
+            allSpecialisations.map((specialisation) => (
+              <option value={specialisation.id} selected={specialisation.id === plan.specialisationId}>
+                {specialisation.label}
+                {specialisation.code ? ` (${specialisation.code})` : ""}
+                {specialisation.modelled ? "" : " — requirements not yet modelled"}
+              </option>
+            ))
+          }
+        </select>
+        <button>Declare</button>
+      </form>
+      {
+        declared && !declared.modelled && (
+          <p class="warn">
+            <strong>{declared.label}</strong> is declared, but its requirements
+            aren't modelled in this app — ANU's 2025 page for it couldn't be
+            sourced, so seeding rules would have meant inventing them. Its 24
+            units are counted in the total below but checked against nothing.
+            Professional Computing is the one specialisation modelled in full.
+          </p>
+        )
+      }
+      {
+        !declared && (
+          <p class="warn">
+            No specialisation declared, so 24 of the 96 units have no
+            requirements attached and the panel below can only account for
+            {" "}{96 - unaccounted} units.
+          </p>
+        )
+      }
+
       <h2>Requirements</h2>
       {
         structural.map((requirement) => (
           <section aria-labelledby={`req-${requirement.key}`} class="bucket">
             <h3 id={`req-${requirement.key}`}>
               {requirement.label}
+              {requirement.kind === "floor" && (
+                <span class="kindtag">minimum, not an allocation</span>
+              )}
               <span class:list={["verdict", verdict(requirement).replace(" ", "-")]}>
                 {verdict(requirement)}
               </span>

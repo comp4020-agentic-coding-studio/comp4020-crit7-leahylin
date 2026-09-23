@@ -12,6 +12,19 @@ import { int, sqliteTable, text, unique } from "drizzle-orm/sqlite-core";
 // courses, requirements and the pools that join them are seeded from ANU
 // Programs and Courses at boot (src/lib/seed.ts), not entered by users.
 
+// The seven specialisations MCOMP offers, one of which is compulsory. Only
+// Professional Computing has its requirements modelled here — the other six
+// are declarable but carry no rules, and `modelled` is what lets the UI say
+// so instead of showing a misleadingly empty panel.
+export const specialisations = sqliteTable("specialisations", {
+  id: int().primaryKey({ autoIncrement: true }),
+  slug: text().notNull().unique(),
+  label: text().notNull(),
+  /** The ANU specialisation code, where confirmed (e.g. PCOM-SPEC). */
+  code: text(),
+  modelled: int({ mode: "boolean" }).notNull().default(false),
+});
+
 export const courses = sqliteTable("courses", {
   id: int().primaryKey({ autoIncrement: true }),
   // The natural key, and what makes the seed idempotent.
@@ -65,6 +78,14 @@ export const requirements = sqliteTable("requirements", {
   subjects: text(),
   minLevel: int("min_level"),
   maxLevel: int("max_level"),
+  // Null for a program-level rule. Set for a rule that only applies once
+  // that specialisation is declared — the engine drops the others entirely
+  // rather than showing them unmet.
+  //
+  // Nullable with no default on purpose: better-sqlite3 enforces foreign
+  // keys, and SQLite refuses to ADD COLUMN with a REFERENCES clause unless
+  // the default is NULL. Making this notNull would break the migration.
+  specialisationId: int("specialisation_id").references(() => specialisations.id),
 });
 
 export const requirementCourses = sqliteTable(
@@ -96,6 +117,9 @@ export const plans = sqliteTable("plans", {
   createdAt: text("created_at")
     .notNull()
     .default(sql`(datetime('now'))`),
+  // Which specialisation this plan has declared, if any. Same nullability
+  // constraint as above.
+  specialisationId: int("specialisation_id").references(() => specialisations.id),
 });
 
 export const planItems = sqliteTable(
@@ -117,6 +141,7 @@ export const planItems = sqliteTable(
   (t) => [unique().on(t.planId, t.courseId)],
 );
 
+export type Specialisation = typeof specialisations.$inferSelect;
 export type Course = typeof courses.$inferSelect;
 export type Requirement = typeof requirements.$inferSelect;
 export type RequirementCourse = typeof requirementCourses.$inferSelect;

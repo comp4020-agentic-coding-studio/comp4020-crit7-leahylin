@@ -8,11 +8,13 @@ import { type PlanProgress, evaluatePlan } from "./progress";
 import {
   type Course,
   type Plan,
+  type Specialisation,
   courses,
   planItems,
   plans,
   requirementCourses,
   requirements,
+  specialisations,
 } from "./schema";
 import { seed } from "./seed";
 
@@ -41,7 +43,20 @@ migrate(db, { migrationsFolder: "./drizzle" });
 // this is the only thing that ever puts the rules in it.
 seed(db);
 
-export type { Course, Plan };
+export type { Course, Plan, Specialisation };
+
+export function listSpecialisations(): Specialisation[] {
+  return db.select().from(specialisations).orderBy(asc(specialisations.label)).all();
+}
+
+export function getSpecialisation(id: number): Specialisation | undefined {
+  return db.select().from(specialisations).where(eq(specialisations.id, id)).get();
+}
+
+/** Declare a specialisation, or pass null to withdraw the declaration. */
+export function declareSpecialisation(planId: number, specialisationId: number | null): void {
+  db.update(plans).set({ specialisationId }).where(eq(plans.id, planId)).run();
+}
 
 export function listCourses(): Course[] {
   return db.select().from(courses).orderBy(asc(courses.code)).all();
@@ -110,6 +125,7 @@ export function planProgress(plan: Plan): {
     db.select().from(requirements).all(),
     db.select().from(requirementCourses).all(),
     items.map((item) => ({ courseId: item.courseId, status: item.status })),
+    plan.specialisationId,
   );
 
   const chosen = items

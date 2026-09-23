@@ -264,3 +264,14 @@ img {
     --warn-bg: #3a2416;
   }
 }
+
+.kindtag {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--dim);
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  padding: 0.05rem 0.5rem;
+  font-weight: 500;
+}

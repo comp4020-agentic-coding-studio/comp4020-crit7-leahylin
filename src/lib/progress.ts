@@ -20,10 +20,14 @@ import type { Course, PlanItem, Requirement, RequirementCourse } from "./schema"
 //   allocating — spends units. Each course is assigned to at most ONE
 //                allocating requirement, so a core course cannot also fill
 //                the elective bucket. Units left over are surplus.
-//   floor      — a minimum across the whole degree ("at least 24 units of
-//                8000-level COMP"). Counts every matching course and spends
+//   floor      — a minimum rather than an allocation ("at least 24 units of
+//                8000-level COMP"). Counts matching courses and spends
 //                nothing, so overlapping with allocating buckets is the
-//                intended reading.
+//                intended reading. A floor belonging to a specialisation is
+//                SCOPED to it: it counts only courses credited to that
+//                specialisation's own rules, because "the specialisation's
+//                24 units must include 12 units of 8000-level courses" is a
+//                claim about those 24 units, not about the whole plan.
 //   total      — the degree's size. Counts everything, spends nothing, and is
 //                the one bucket meant to be exceeded.
 //
@@ -77,6 +81,10 @@ export type RequirementProgress = {
 
 export type PlanProgress = {
   requirements: RequirementProgress[];
+  /** True when the plan has declared a specialisation whose rules are
+   *  seeded. When false, 24 of the degree's 96 units are unaccounted for and
+   *  the page has to say so rather than implying the rest is all there is. */
+  specialisationModelled: boolean;
   completedUnits: number;
   plannedUnits: number;
   totalUnits: number;
@@ -189,6 +197,7 @@ export function evaluatePlan(
   requirements: Requirement[],
   pools: PoolRow[],
   plan: PlanEntry[],
+  declaredSpecialisationId: number | null = null,
 ): PlanProgress {
   const courseById = new Map(courses.map((course) => [course.id, course]));
 
@@ -199,7 +208,18 @@ export function evaluatePlan(
     return course ? [{ entry, course }] : [];
   });
 
-  const resolved: Resolved[] = requirements.map((requirement) => {
+  // A rule belonging to a specialisation applies only once that
+  // specialisation is declared. Undeclared ones are dropped entirely rather
+  // than shown unmet: six of MCOMP's seven specialisations are alternatives
+  // you will never take, so listing their rules as outstanding would be
+  // nonsense.
+  const applicable = requirements.filter(
+    (requirement) =>
+      requirement.specialisationId === null ||
+      requirement.specialisationId === declaredSpecialisationId,
+  );
+
+  const resolved: Resolved[] = applicable.map((requirement) => {
     const pool = resolvePool(requirement, courses, pools);
     return {
       requirement,
@@ -242,11 +262,31 @@ export function evaluatePlan(
     }
   }
 
-  // --- floors and totals: measured over everything, spending nothing -----
+  // --- floors and totals: measured, not allocated ------------------------
   for (const rule of resolved) {
-    if (rule.requirement.kind !== "allocating") {
+    if (rule.requirement.kind === "allocating") continue;
+
+    if (rule.requirement.specialisationId === null) {
+      // Degree-wide: every matching course in the plan counts.
       rule.credited = rule.inPool;
+      continue;
     }
+
+    // Scoped to its specialisation: only what that specialisation's own
+    // allocating rules actually credited, intersected with this floor's own
+    // filter. Without the scope, a 8000-level compulsory core course would
+    // count toward the specialisation's internal 8000-level minimum, which
+    // it has nothing to do with.
+    const sibling = new Set(
+      resolved
+        .filter(
+          (other) =>
+            other.requirement.kind === "allocating" &&
+            other.requirement.specialisationId === rule.requirement.specialisationId,
+        )
+        .flatMap((other) => other.credited.map((row) => row.course.id)),
+    );
+    rule.credited = rule.inPool.filter((row) => sibling.has(row.course.id));
   }
 
   const progress = resolved
@@ -282,8 +322,13 @@ export function evaluatePlan(
 
   const whole = tally(entries);
   const surplus = tally([...unassigned]);
+  const declared =
+    declaredSpecialisationId !== null &&
+    applicable.some((r) => r.specialisationId === declaredSpecialisationId);
+
   return {
     requirements: progress,
+    specialisationModelled: declared,
     completedUnits: whole.completed,
     plannedUnits: whole.planned,
     totalUnits: whole.completed + whole.planned,

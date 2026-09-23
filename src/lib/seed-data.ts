@@ -62,11 +62,55 @@ export const COURSES: SeedCourse[] = [
   { code: "COMP8800", title: "Advanced Computing Research Project", units: 12 },
 ];
 
+
+export type SeedSpecialisation = {
+  slug: string;
+  label: string;
+  /** The ANU specialisation code, where the page was confirmed. */
+  code: string | null;
+  /** Whether this specialisation's own requirements are seeded below. */
+  modelled: boolean;
+};
+
+// All seven specialisations MCOMP offers; one is compulsory.
+//
+// Only Professional Computing is modelled. Its 2025 page confirmed the rules
+// verbatim. The other six could not be sourced: their 2025 specialisation
+// pages do not resolve under any slug tried (AINT-SPEC, aint-spec, arti-spec,
+// mlea-spec all 404), and the only Artificial Intelligence course list I
+// found is from the 2015 catalogue — too stale to seed as if it were current.
+//
+// They are still declarable, with `modelled: false`, so the app can say "not
+// yet modelled" rather than show an empty panel that reads like zero
+// progress. Adding one later is seed data only; no schema change.
+export const SPECIALISATIONS: SeedSpecialisation[] = [
+  { slug: "artificial-intelligence", label: "Artificial Intelligence", code: null, modelled: false },
+  { slug: "computational-foundations", label: "Computational Foundations", code: null, modelled: false },
+  { slug: "computer-systems", label: "Computer Systems", code: null, modelled: false },
+  { slug: "data-science", label: "Data Science", code: null, modelled: false },
+  {
+    slug: "human-centred-and-creative-computing",
+    label: "Human-Centred and Creative Computing",
+    code: null,
+    modelled: false,
+  },
+  { slug: "machine-learning", label: "Machine Learning", code: null, modelled: false },
+  {
+    slug: "professional-computing",
+    label: "Professional Computing",
+    code: "PCOM-SPEC",
+    modelled: true,
+  },
+];
+
 export type SeedRequirement = {
   key: string;
   label: string;
   /** See the `kind` column in schema.ts. Omitted means "allocating". */
   kind?: "allocating" | "floor" | "total";
+  /** Slug of the specialisation this rule belongs to. Omitted means it is
+   *  a program-level rule that always applies. */
+  specialisation?: string;
   /** The rule in the words Programs and Courses uses. */
   detail: string;
   requiredUnits: number;
@@ -157,6 +201,64 @@ export const REQUIREMENTS: SeedRequirement[] = [
     requiredUnits: 24,
     sortOrder: 70,
     subjects: "COMP",
+    minLevel: 8000,
+    maxLevel: 8999,
+  },
+  // --- Professional Computing (PCOM-SPEC), 24 units -------------------
+  // These replace the program's generic "24 units from one specialisation"
+  // rather than sitting alongside it. Both would be allocating, so keeping
+  // both would have them competing for the same courses and only one could
+  // ever fill. The three allocating rules below come to exactly 24 units,
+  // which is what brings the degree's structural total to 96.
+  {
+    key: "pcom-core",
+    label: "Specialisation: compulsory",
+    detail: "12 units from the completion of the following courses.",
+    specialisation: "professional-computing",
+    requiredUnits: 12,
+    sortOrder: 100,
+    include: ["COMP6120", "ENGN8100"],
+  },
+  {
+    key: "pcom-elective",
+    label: "Specialisation: elective",
+    detail: "6 units from the completion of one of the following courses.",
+    specialisation: "professional-computing",
+    requiredUnits: 6,
+    sortOrder: 110,
+    include: [
+      "COMP6240", "COMP6331", "COMP6390", "INFS8004",
+      "INFS8205", "LAWS8445", "MGMT7020", "REGN8014",
+    ],
+  },
+  {
+    key: "pcom-8000-comp",
+    label: "Specialisation: further 8000-level COMP",
+    detail:
+      "6 units from any 8000 level COMP coded course, excluding the project " +
+      "courses COMP8715, COMP8800 and COMP8830.",
+    specialisation: "professional-computing",
+    requiredUnits: 6,
+    sortOrder: 120,
+    subjects: "COMP",
+    minLevel: 8000,
+    maxLevel: 8999,
+    // The reason requirement_courses carries a role at all.
+    exclude: ["COMP8715", "COMP8800", "COMP8830"],
+  },
+  {
+    key: "pcom-min-8000",
+    label: "Specialisation: 8000-level minimum",
+    detail:
+      "The specialisation's 24 units must consist of a minimum of 12 units " +
+      "of 8000 level courses. Note this one is not restricted to COMP.",
+    specialisation: "professional-computing",
+    // A floor, but scoped: it counts only the courses credited to this
+    // specialisation, not every 8000-level course in the plan. A core
+    // course like COMP8260 is 8000-level and must NOT count here.
+    kind: "floor",
+    requiredUnits: 12,
+    sortOrder: 130,
     minLevel: 8000,
     maxLevel: 8999,
   },

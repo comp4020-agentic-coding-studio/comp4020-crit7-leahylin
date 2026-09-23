@@ -6,11 +6,13 @@ import {
   plans,
   requirementCourses,
   requirements,
+  specialisations,
 } from "./schema";
 import {
   COURSES,
   DEMO_PLAN,
   REQUIREMENTS,
+  SPECIALISATIONS,
   levelOf,
   subjectOf,
 } from "./seed-data";
@@ -85,6 +87,28 @@ export function seed(db: BetterSQLite3Database): void {
       })
       .run();
 
+    tx.insert(specialisations)
+      .values(SPECIALISATIONS)
+      .onConflictDoUpdate({
+        target: specialisations.slug,
+        set: {
+          label: sql`excluded.label`,
+          code: sql`excluded.code`,
+          modelled: sql`excluded.modelled`,
+        },
+      })
+      .run();
+
+    // Needed before the requirements insert, because each rule that belongs
+    // to a specialisation carries its id.
+    const specialisationIdBySlug = new Map(
+      tx
+        .select({ id: specialisations.id, slug: specialisations.slug })
+        .from(specialisations)
+        .all()
+        .map((row) => [row.slug, row.id] as const),
+    );
+
     tx.insert(requirements)
       .values(
         REQUIREMENTS.map((requirement) => ({
@@ -97,6 +121,16 @@ export function seed(db: BetterSQLite3Database): void {
           subjects: requirement.subjects ?? null,
           minLevel: requirement.minLevel ?? null,
           maxLevel: requirement.maxLevel ?? null,
+          specialisationId:
+            requirement.specialisation === undefined
+              ? null
+              : (specialisationIdBySlug.get(requirement.specialisation) ??
+                (() => {
+                  throw new Error(
+                    `seed: requirement "${requirement.key}" names specialisation ` +
+                      `"${requirement.specialisation}", which is not seeded`,
+                  );
+                })()),
         })),
       )
       .onConflictDoUpdate({
@@ -110,6 +144,7 @@ export function seed(db: BetterSQLite3Database): void {
           subjects: sql`excluded.subjects`,
           minLevel: sql`excluded.min_level`,
           maxLevel: sql`excluded.max_level`,
+          specialisationId: sql`excluded.specialisation_id`,
         },
       })
       .run();
@@ -184,6 +219,7 @@ export function seed(db: BetterSQLite3Database): void {
 /** Row counts, for proving a second boot changed nothing. */
 export function seedCounts(db: BetterSQLite3Database): Record<string, number> {
   return {
+    specialisations: db.select().from(specialisations).all().length,
     courses: db.select().from(courses).all().length,
     requirements: db.select().from(requirements).all().length,
     requirementCourses: db.select().from(requirementCourses).all().length,
