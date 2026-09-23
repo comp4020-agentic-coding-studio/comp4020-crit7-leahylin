@@ -5,6 +5,7 @@ import { desc } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { type Message, messages } from "./schema";
+import { seed } from "./seed";
 
 // One SQLite file is the app's whole persistent state. In production
 // fly.toml points DATABASE_PATH at the machine's volume (/data), which is
@@ -23,6 +24,14 @@ export const db = drizzle(client);
 // run them from. The flow: edit src/lib/schema.ts, `pnpm db:generate`,
 // commit the migration it writes to drizzle/.
 migrate(db, { migrationsFolder: "./drizzle" });
+
+// Then the degree itself. The MCOMP rules are reference data — they
+// describe the degree rather than belonging to any user — so they are
+// asserted here rather than entered through the app. This has to happen on
+// every boot, not once: spec/global-setup.ts hands each test run a fresh
+// empty database, so this is the only thing that ever puts the rules in it.
+// seed() is idempotent per row; see the note there.
+seed(db);
 
 export type { Message };
 
