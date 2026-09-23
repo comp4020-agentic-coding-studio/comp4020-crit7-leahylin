@@ -1,10 +1,19 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import Database from "better-sqlite3";
-import { desc } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
-import { type Message, messages } from "./schema";
+import { type PlanProgress, evaluatePlan } from "./progress";
+import {
+  type Course,
+  type Plan,
+  courses,
+  planItems,
+  plans,
+  requirementCourses,
+  requirements,
+} from "./schema";
 import { seed } from "./seed";
 
 // One SQLite file is the app's whole persistent state. In production
@@ -25,20 +34,90 @@ export const db = drizzle(client);
 // commit the migration it writes to drizzle/.
 migrate(db, { migrationsFolder: "./drizzle" });
 
-// Then the degree itself. The MCOMP rules are reference data — they
-// describe the degree rather than belonging to any user — so they are
-// asserted here rather than entered through the app. This has to happen on
-// every boot, not once: spec/global-setup.ts hands each test run a fresh
-// empty database, so this is the only thing that ever puts the rules in it.
-// seed() is idempotent per row; see the note there.
+// Then the degree itself. The MCOMP rules are reference data — they describe
+// the degree rather than belonging to any user — so they are asserted here
+// rather than entered through the app. This has to happen on every boot, not
+// once: spec/global-setup.ts hands each test run a fresh empty database, so
+// this is the only thing that ever puts the rules in it.
 seed(db);
 
-export type { Message };
+export type { Course, Plan };
 
-export function listMessages(): Message[] {
-  return db.select().from(messages).orderBy(desc(messages.id)).limit(50).all();
+export function listCourses(): Course[] {
+  return db.select().from(courses).orderBy(asc(courses.code)).all();
 }
 
-export function addMessage(body: string): Message {
-  return db.insert(messages).values({ body }).returning().get();
+export function listPlans(): Plan[] {
+  return db.select().from(plans).orderBy(asc(plans.label)).all();
+}
+
+export function getPlan(slug: string): Plan | undefined {
+  return db.select().from(plans).where(eq(plans.slug, slug)).get();
+}
+
+/** URL-safe slug from a human label, uniquified against what's stored. */
+export function slugFor(label: string): string {
+  const base =
+    label
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "")
+      .slice(0, 40) || "plan";
+  let slug = base;
+  for (let n = 2; getPlan(slug) !== undefined; n += 1) {
+    slug = `${base}-${n}`;
+  }
+  return slug;
+}
+
+export function createPlan(label: string): Plan {
+  return db.insert(plans).values({ slug: slugFor(label), label }).returning().get();
+}
+
+export function addToPlan(
+  planId: number,
+  courseId: number,
+  status: "completed" | "planned",
+): void {
+  // UNIQUE (plan_id, course_id) means re-adding a course moves it between
+  // completed and planned rather than stacking a second copy of its units.
+  db.insert(planItems)
+    .values({ planId, courseId, status })
+    .onConflictDoUpdate({
+      target: [planItems.planId, planItems.courseId],
+      set: { status },
+    })
+    .run();
+}
+
+export function removeFromPlan(planId: number, courseId: number): void {
+  db.delete(planItems)
+    .where(and(eq(planItems.planId, planId), eq(planItems.courseId, courseId)))
+    .run();
+}
+
+/** Everything a plan page renders: the plan, its courses, and the verdict. */
+export function planProgress(plan: Plan): {
+  progress: PlanProgress;
+  chosen: { course: Course; status: "completed" | "planned" }[];
+} {
+  const catalogue = listCourses();
+  const byId = new Map(catalogue.map((course) => [course.id, course]));
+  const items = db.select().from(planItems).where(eq(planItems.planId, plan.id)).all();
+
+  const progress = evaluatePlan(
+    catalogue,
+    db.select().from(requirements).all(),
+    db.select().from(requirementCourses).all(),
+    items.map((item) => ({ courseId: item.courseId, status: item.status })),
+  );
+
+  const chosen = items
+    .flatMap((item) => {
+      const course = byId.get(item.courseId);
+      return course ? [{ course, status: item.status }] : [];
+    })
+    .sort((a, b) => a.course.code.localeCompare(b.course.code));
+
+  return { progress, chosen };
 }

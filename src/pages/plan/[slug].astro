@@ -1,0 +1,214 @@
+---
+import { getPlan, listCourses, planProgress } from "../../lib/db";
+import "../../styles.css";
+
+const { slug } = Astro.params;
+const plan = slug ? getPlan(slug) : undefined;
+if (!plan) {
+  return new Response("No such plan", { status: 404 });
+}
+
+const { progress, chosen } = planProgress(plan);
+const catalogue = listCourses();
+const chosenIds = new Set(chosen.map((item) => item.course.id));
+const available = catalogue.filter((course) => !chosenIds.has(course.id));
+
+// Group the add-a-course menu the way the catalogue reads.
+const subjects = [...new Set(available.map((course) => course.subject))].sort();
+
+const total = progress.requirements.find((r) => r.kind === "total");
+const structural = progress.requirements.filter((r) => r.kind !== "total");
+
+function verdict(r: (typeof progress.requirements)[number]): string {
+  if (r.satisfied) return "done";
+  if (r.onTrack) return "on track";
+  if (r.countedUnits > 0) return "started";
+  return "not started";
+}
+---
+
+<!doctype html>
+<html lang="en-AU">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{plan.label} — ANU degree progress</title>
+  </head>
+  <body>
+    <nav aria-label="site">
+      <a href="/">Plans</a>
+      <a href="/readme/">About</a>
+    </nav>
+    <main data-plan={plan.slug}>
+      <h1>{plan.label}</h1>
+      <p class="note">
+        Master of Computing (7706XMCOMP), 2025 rules. {progress.completedUnits} units
+        completed, {progress.plannedUnits} planned, {progress.totalUnits} in total.
+      </p>
+
+      {
+        total && (
+          <section aria-labelledby="req-total" class:list={["bucket", { over: total.exceeded }]}>
+            <h2 id="req-total">{total.label}</h2>
+            <p class="bar">
+              <progress
+                id="prog-total"
+                value={Math.min(total.countedUnits, total.requiredUnits)}
+                max={total.requiredUnits}
+                aria-labelledby="req-total"
+              />
+              <span class="figure">
+                {total.countedUnits} of {total.requiredUnits} units
+              </span>
+            </p>
+            {total.exceeded && (
+              <p class="warn">
+                Over-planned by {total.excessUnits} units — the degree is
+                {" "}{total.requiredUnits} units, so something here won't count.
+              </p>
+            )}
+            {total.detail && <p class="rule">{total.detail}</p>}
+          </section>
+        )
+      }
+
+      <h2>Requirements</h2>
+      {
+        structural.map((requirement) => (
+          <section aria-labelledby={`req-${requirement.key}`} class="bucket">
+            <h3 id={`req-${requirement.key}`}>
+              {requirement.label}
+              <span class:list={["verdict", verdict(requirement).replace(" ", "-")]}>
+                {verdict(requirement)}
+              </span>
+            </h3>
+            <p class="bar">
+              <progress
+                value={Math.min(requirement.countedUnits, requirement.requiredUnits)}
+                max={requirement.requiredUnits}
+                aria-labelledby={`req-${requirement.key}`}
+              />
+              <span class="figure">
+                {requirement.completedUnits} completed
+                {requirement.plannedUnits > 0 && <> + {requirement.plannedUnits} planned</>}
+                {" "}of {requirement.requiredUnits} units
+              </span>
+            </p>
+            {requirement.detail && <p class="rule">{requirement.detail}</p>}
+            {
+              requirement.countedCodes.length > 0 && (
+                <p class="counting">Counting: {requirement.countedCodes.join(", ")}</p>
+              )
+            }
+            {
+              /* The gap between what a rule could accept and what it was
+                 credited is exactly the units a tighter rule claimed first. */
+              requirement.kind === "allocating" &&
+                requirement.poolMatchedUnits > requirement.countedUnits && (
+                  <p class="elsewhere">
+                    {requirement.poolMatchedUnits - requirement.countedUnits} more matching
+                    units are counting toward another requirement.
+                  </p>
+                )
+            }
+          </section>
+        ))
+      }
+
+      {
+        progress.surplusUnits > 0 && (
+          <section aria-labelledby="surplus" class="bucket">
+            <h3 id="surplus">Not counting anywhere</h3>
+            <p class="figure">{progress.surplusUnits} units: {progress.surplusCodes.join(", ")}</p>
+            <p class="rule">
+              Every requirement these could fill is already full. They still
+              count toward the total and the 8000-level floor.
+            </p>
+          </section>
+        )
+      }
+
+      <h2>Courses in this plan</h2>
+      {
+        chosen.length === 0 ? (
+          <p>Nothing added yet.</p>
+        ) : (
+          <ul class="chosen">
+            {chosen.map(({ course, status }) => (
+              <li>
+                <span class="code">{course.code}</span>
+                <span class="title">{course.title}</span>
+                <span class="units">{course.units}u</span>
+                <span class:list={["status", status]}>{status}</span>
+                <form method="post" action="/api/plan-items" class="inline">
+                  <input type="hidden" name="slug" value={plan.slug} />
+                  <input type="hidden" name="courseId" value={course.id} />
+                  <input
+                    type="hidden"
+                    name="status"
+                    value={status === "completed" ? "planned" : "completed"}
+                  />
+                  <button>
+                    Mark {course.code} as {status === "completed" ? "planned" : "completed"}
+                  </button>
+                </form>
+                <form method="post" action="/api/plan-items" class="inline">
+                  <input type="hidden" name="slug" value={plan.slug} />
+                  <input type="hidden" name="courseId" value={course.id} />
+                  <input type="hidden" name="action" value="remove" />
+                  <button>Remove {course.code}</button>
+                </form>
+              </li>
+            ))}
+          </ul>
+        )
+      }
+
+      <h2>Add a course</h2>
+      {
+        available.length === 0 ? (
+          <p>Every course in the catalogue is already in this plan.</p>
+        ) : (
+          <form method="post" action="/api/plan-items" class="stack">
+            <input type="hidden" name="slug" value={plan.slug} />
+            <label for="courseId">Course</label>
+            <select id="courseId" name="courseId" required>
+              {subjects.map((subject) => (
+                <optgroup label={subject}>
+                  {available
+                    .filter((course) => course.subject === subject)
+                    .map((course) => (
+                      <option value={course.id}>
+                        {course.code} — {course.title} ({course.units}u)
+                      </option>
+                    ))}
+                </optgroup>
+              ))}
+            </select>
+            <fieldset>
+              <legend>Status</legend>
+              <label><input type="radio" name="status" value="completed" checked /> Completed</label>
+              <label><input type="radio" name="status" value="planned" /> Planned</label>
+            </fieldset>
+            <button>Add to plan</button>
+          </form>
+        )
+      }
+    </main>
+    <script>
+      // The form posts and redirects, so the submitting tab re-renders from
+      // SQLite on its own. This stream is how OTHER tabs showing the same
+      // plan find out. Re-rendering on the server keeps one source of truth
+      // for the arithmetic rather than duplicating the engine in the browser.
+      const slug = document.querySelector("main")?.getAttribute("data-plan");
+      const source = new EventSource("/api/events");
+      source.addEventListener("message", (event) => {
+        try {
+          if (JSON.parse(event.data).slug === slug) location.reload();
+        } catch {
+          /* a heartbeat or a malformed frame: nothing to do */
+        }
+      });
+    </script>
+  </body>
+</html>

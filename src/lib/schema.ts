@@ -8,19 +8,6 @@ import { int, sqliteTable, text, unique } from "drizzle-orm/sqlite-core";
 // by hand: state on the deployed volume outlives every deploy, and the
 // migration trail is what keeps old state and new code compatible.
 
-// --- the starter's guestbook -------------------------------------------
-// Still here so the app keeps building while the planner lands beside it.
-// It goes, table and all, in the migration that removes the guestbook UI.
-export const messages = sqliteTable("messages", {
-  id: int().primaryKey({ autoIncrement: true }),
-  body: text().notNull(),
-  createdAt: text("created_at")
-    .notNull()
-    .default(sql`(datetime('now'))`),
-});
-
-export type Message = typeof messages.$inferSelect;
-
 // --- the degree, as reference data -------------------------------------
 // courses, requirements and the pools that join them are seeded from ANU
 // Programs and Courses at boot (src/lib/seed.ts), not entered by users.
