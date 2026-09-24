@@ -203,50 +203,71 @@ describe("floor categories in the Course Planner have no picker of their own", (
     expect(category).not.toContain('class="picker"');
   });
 
-  it("gives the specialisation's own 8000-level floor no add-selector either, and says it isn't met yet", async () => {
+  it("gives Professional Computing's own 8000-level floor no section of its own at all", async () => {
+    // Unlike the degree-wide floor, a specialisation floor folds into its
+    // specialisation's umbrella bucket (see the dedicated describe block
+    // below) rather than getting a disconnected one-line box — so its own
+    // id shouldn't appear as a section heading anywhere on the page.
     const html = await planHtml(slug);
-    const planner = between(html, "<h2>ANU Course Planner", "<h2>My Study Plan");
-    const category = between(planner, 'id="cat-pcom-min-8000"', "</section>");
-    expect(category).not.toContain('class="picker"');
-    // No rule text, no kind tag, no pointer to add courses from — the full
-    // explanation lives in Degree Progress. Just the one-line check.
-    expect(category).not.toContain("minimum, not an allocation");
-    expect(category).not.toContain("must consist of a minimum");
-    expect(category).toContain("Not yet met.");
-  });
-
-  it("switches that one-line check to the satisfied message once the floor is met", async () => {
-    // pcom-min-8000 requires 12 units of 8000-level courses among whatever
-    // this specialisation's OTHER categories already credited. ENGN8100
-    // (pcom-core) and COMP8600 (pcom-8000-comp) are both 8000-level and
-    // together clear it without needing a third, unrelated course.
-    const html = await planHtml(slug);
-    for (const code of ["ENGN8100", "COMP8600"]) {
-      const page = await planHtml(slug);
-      const courseId = courseIdFor(page, code);
-      await post("/api/plan-items", new URLSearchParams({ slug, courseId, status: "completed" }));
-    }
-    void html;
-
-    const after = await planHtml(slug);
-    const planner = between(after, "<h2>ANU Course Planner", "<h2>My Study Plan");
-    const category = between(planner, 'id="cat-pcom-min-8000"', "</section>");
-    expect(category).toContain("Every course in this category is already in your plan.");
-    expect(category).not.toContain("Not yet met.");
+    expect(html).not.toContain('id="cat-pcom-min-8000"');
   });
 
   it("still gives every allocating and cap category its selector", async () => {
     const html = await planHtml(slug);
     const planner = between(html, "<h2>ANU Course Planner", "<h2>My Study Plan");
-    // pcom-8000-comp is deliberately not checked here: an earlier test in
-    // this describe block adds COMP8600, which is in ITS pool too, and
-    // fills it — correctly hidden by the same "full" rule this whole file
-    // otherwise verifies. mcomp-core is checked before any course lands in
-    // it in this describe block.
-    for (const key of ["mcomp-core", "pcom-core", "pcom-elective"]) {
+    for (const key of ["mcomp-core", "pcom-core", "pcom-elective", "pcom-8000-comp"]) {
       const category = between(planner, `id="cat-${key}"`, "</section>");
       expect(category, key).toContain('class="picker"');
     }
+  });
+});
+
+describe("a specialisation floor folds into its umbrella bucket", () => {
+  let slug: string;
+
+  beforeAll(async () => {
+    const res = await post(
+      "/api/plans",
+      new URLSearchParams({ label: `fold probe ${process.hrtime.bigint()}` }),
+    );
+    const location = res.headers.get("location");
+    if (!location) throw new Error("plan creation did not redirect");
+    slug = location.replace(/^\/plan\//, "").replace(/\/$/, "");
+    const html = await planHtml(slug);
+    const mchlId = new RegExp('<option value="(\\d+)"[^>]*>\\s*Machine Learning').exec(html)?.[1];
+    if (!mchlId) throw new Error("Machine Learning not found in the specialisation list");
+    await post("/api/plan-specialisation", new URLSearchParams({ slug, specialisationId: mchlId }));
+  });
+
+  it("shows both the umbrella's and the floor's rule text in one box, with no separate floor section", async () => {
+    const html = await planHtml(slug);
+    const planner = between(html, "<h2>ANU Course Planner", "<h2>My Study Plan");
+    expect(planner).not.toContain('id="cat-mchl-min-8000"');
+
+    const box = between(planner, 'id="cat-mchl-courses"', "</section>");
+    expect(box).toContain("24 units from completion of courses from the following list.");
+    expect(box).toContain("A minimum of 12 units of 8000-level courses.");
+    expect(box).toContain("Not yet met.");
+    // The umbrella's own picker is still there — the floor merging into
+    // this box doesn't also swallow the umbrella's own add-a-course action.
+    expect(box).toContain('class="picker"');
+  });
+
+  it("switches the folded floor's line to the satisfied message once it's covered", async () => {
+    // mchl-min-8000 needs 12 units of 8000-level courses among whatever
+    // mchl-courses already credited. COMP8600 and COMP8650 are both
+    // 8000-level and both in the same pool, so two courses clear it.
+    for (const code of ["COMP8600", "COMP8650"]) {
+      const page = await planHtml(slug);
+      const courseId = courseIdFor(page, code);
+      await post("/api/plan-items", new URLSearchParams({ slug, courseId, status: "completed" }));
+    }
+
+    const after = await planHtml(slug);
+    const planner = between(after, "<h2>ANU Course Planner", "<h2>My Study Plan");
+    const box = between(planner, 'id="cat-mchl-courses"', "</section>");
+    expect(box).toContain("Every course in this category is already in your plan.");
+    expect(box).not.toContain("Not yet met.");
   });
 });
 

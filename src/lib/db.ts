@@ -144,6 +144,12 @@ export function planProgress(plan: Plan): {
    *  natural key (RequirementProgress carries the key, not the numeric id,
    *  so this is what a page can actually look a pool up by). */
   poolsByKey: Map<string, ReturnType<typeof resolvePool>>;
+  /** Which specialisation (if any) owns each requirement, by key.
+   *  RequirementProgress doesn't carry this — it's a display grouping
+   *  concern, not something the engine needs — so a page that wants to fold
+   *  a specialisation's floor checks into its own umbrella category (rather
+   *  than giving the floor a disconnected box of its own) looks it up here. */
+  specialisationIdByKey: Map<string, number | null>;
 } {
   const catalogue = listCourses();
   const byId = new Map(catalogue.map((course) => [course.id, course]));
@@ -173,7 +179,11 @@ export function planProgress(plan: Plan): {
     ]),
   );
 
-  return { progress, chosen, poolsByKey };
+  const specialisationIdByKey = new Map(
+    allRequirements.map((requirement) => [requirement.key, requirement.specialisationId]),
+  );
+
+  return { progress, chosen, poolsByKey, specialisationIdByKey };
 }
 
 /** For one requirement, the courses in its pool not already in the plan —

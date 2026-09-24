@@ -1,4 +1,5 @@
 ---
+import { foldSpecialisationFloors } from "../../lib/category-groups";
 import {
   type ChosenItem,
   availableForRequirement,
@@ -17,7 +18,8 @@ if (!plan) {
   return new Response("No such plan", { status: 404 });
 }
 
-const { progress, chosen, poolsByKey } = planProgress(plan);
+const { progress, chosen, poolsByKey, specialisationIdByKey } =
+  planProgress(plan);
 const catalogue = listCourses();
 const chosenIds = new Set(chosen.map((item) => item.course.id));
 const semesters = semesterOptions();
@@ -29,6 +31,22 @@ const total = progress.requirements.find((r) => r.kind === "total");
 // as allocating, a floor, or a cap is invisible here — adding a course is
 // the same action regardless of which kind of rule is filling up behind it.
 const categories = progress.requirements.filter((r) => r.kind !== "total");
+
+// A specialisation's own floor rules (its internal minimums) don't have a
+// pool of their own to add from any more than the degree-wide one does — see
+// the earlier fix. But unlike the degree-wide floor, a specialisation floor
+// DOES have a natural home: the specialisation's own "X courses" bucket, one
+// box up. foldSpecialisationFloors folds it straight into that box instead
+// of giving it a disconnected section of its own — see src/lib/category-
+// groups.ts for the (separately tested) logic.
+const { visible: visibleCategories, foldedInto: floorsFoldedIntoKey } =
+  foldSpecialisationFloors(categories, specialisationIdByKey);
+
+function floorCheckLine(floor: (typeof categories)[number]): string {
+  return floor.onTrack
+    ? "Every course in this category is already in your plan."
+    : "Not yet met.";
+}
 
 const allSpecialisations = listSpecialisations();
 const declared = allSpecialisations.find((s) => s.id === plan.specialisationId);
@@ -135,7 +153,8 @@ function semesterSlug(semester: string | null): string {
       </section>
 
       {
-        categories.map((requirement) => {
+        visibleCategories.map((requirement) => {
+          const foldedFloors = floorsFoldedIntoKey.get(requirement.key) ?? [];
           // A floor doesn't own a pool to add from — it's a measurement
           // over whatever the plan's other categories already claimed
           // ("a minimum of 12 units of 8000-level courses" reads off
@@ -197,6 +216,19 @@ function semesterSlug(semester: string | null): string {
               ) : (
                 requirement.detail && <p class="rule">{requirement.detail}</p>
               )}
+              {
+                /* A specialisation's own floor(s) — internal minimums with
+                   no pool of their own — fold straight into this box rather
+                   than getting a disconnected section: their rule text
+                   alongside this bucket's, then one line each for whether
+                   they're already covered by what's been picked so far. */
+                foldedFloors.map((floor) => (
+                  <>
+                    {floor.detail && <p class="rule">{floor.detail}</p>}
+                    <p class="note">{floorCheckLine(floor)}</p>
+                  </>
+                ))
+              }
               {isFloor ? null : isFull || options.length === 0 ? (
                 <p class="note">
                   Every course in this category is already in your plan.
