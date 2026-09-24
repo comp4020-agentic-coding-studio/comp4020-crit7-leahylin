@@ -654,6 +654,27 @@ describe("a completed degree is congratulated", () => {
     return { slug, ids: new Map(FULL.map((code) => [code, courseIdFor(page, code)])) };
   }
 
+  it("expects graduation at the end of the last scheduled semester once the plan meets the degree", async () => {
+    const { slug, ids } = await pcomPlan();
+    const semesters = ["2025 Semester 1", "2025 Semester 2", "2026 Semester 1"];
+    for (const [i, code] of FULL.entries()) {
+      // COMP8715 starts in 2026 Semester 1, so it runs into Semester 2.
+      const semester = code === "COMP8715" ? "2026 Semester 1" : semesters[i % 3];
+      await post("/api/plan-items", new URLSearchParams({
+        slug, courseId: ids.get(code) ?? "", status: "planned", semester,
+      }));
+    }
+    const total = between(await planHtml(slug), 'id="req-total"', "</section>");
+    expect(total).toContain("Expected to graduate: <strong>end of 2026 Semester 2</strong>");
+
+    // Take one course's semester away: no longer known.
+    await post("/api/plan-items", new URLSearchParams({
+      slug, courseId: ids.get("COMP8600") ?? "", action: "move", semester: "",
+    }));
+    const after = between(await planHtml(slug), 'id="req-total"', "</section>");
+    expect(after).toContain("6 planned units have no semester yet");
+  });
+
   it("shows the congratulations once every course is completed", async () => {
     const { slug, ids } = await pcomPlan();
     for (const code of FULL) {

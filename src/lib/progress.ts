@@ -420,3 +420,18 @@ export function degreeComplete(progress: PlanProgress): boolean {
     )
   );
 }
+
+/**
+ * Whether the plan meets the whole degree once planned courses count too:
+ * every requirement on track, no ceiling broken, a modelled specialisation
+ * declared. degreeComplete asks the same of completed courses alone.
+ */
+export function degreeOnTrack(progress: PlanProgress): boolean {
+  return (
+    progress.specialisationModelled &&
+    progress.requirements.length > 0 &&
+    progress.requirements.every((requirement) =>
+      requirement.kind === "cap" ? !requirement.violated : requirement.onTrack,
+    )
+  );
+}

@@ -3,12 +3,14 @@
 // units toward it are what a reader comes for; then every requirement as
 // one line (name, units, standing) that opens to its bar, rule and the
 // courses counting toward it; then anything that counts toward nothing.
+import type { Graduation } from "../lib/graduation";
 import type { PlanProgress, RequirementProgress } from "../lib/progress";
 
 interface Props {
   progress: PlanProgress;
+  graduation: Graduation;
 }
-const { progress } = Astro.props;
+const { progress, graduation } = Astro.props;
 const total = progress.requirements.find((r) => r.kind === "total");
 const categories = progress.requirements.filter((r) => r.kind !== "total");
 
@@ -59,6 +61,30 @@ function verdict(r: RequirementProgress): string {
         <span class="item"><span class="key done"></span>{completedUnits} completed</span>
         <span class="item"><span class="key planned"></span>{plannedUnits} planned</span>
         <span class="item"><span class="key rest"></span>{stillToPlan} still to plan</span>
+      </p>
+      <p class:list={["graduation", graduation.kind]}>
+        {graduation.kind === "complete" && (
+          <>Degree complete — every requirement met.</>
+        )}
+        {graduation.kind === "expected" && (
+          <>
+            Expected to graduate: <strong>end of {graduation.semester}</strong>
+          </>
+        )}
+        {graduation.kind === "unscheduled" && (
+          <>
+            Expected to graduate: not yet known —{" "}
+            {graduation.unscheduledUnits} planned units have no semester yet
+            {graduation.atLeast && <>. At the earliest, end of {graduation.atLeast}</>}.
+          </>
+        )}
+        {graduation.kind === "incomplete" && (
+          <>
+            Expected to graduate: not yet known — the plan doesn't meet every
+            requirement yet. The standard four semesters end in{" "}
+            {graduation.standardEnd}.
+          </>
+        )}
       </p>
       {total.exceeded && (
         <p class="warn">

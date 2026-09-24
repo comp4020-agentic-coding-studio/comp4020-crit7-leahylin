@@ -14,7 +14,8 @@ import {
   semesterOptions,
   studyPlanBySemester,
 } from "../../lib/db";
-import { degreeComplete } from "../../lib/progress";
+import { expectedGraduation } from "../../lib/graduation";
+import { degreeComplete, degreeOnTrack } from "../../lib/progress";
 import "../../styles.css";
 
 // One plan: its Course Planner, Study Plan and Degree Progress. This page
@@ -35,7 +36,8 @@ const specialisations = listSpecialisations();
 // The plan's semesters run from its intake (see semesterOptions).
 const semesters = semesterOptions(plan.intake);
 // Every semester, empty ones included, so a gap in the plan shows as a gap.
-const semesterGroups = everySemester(studyPlanBySemester(chosen), plan.intake);
+const byTerm = studyPlanBySemester(chosen);
+const semesterGroups = everySemester(byTerm, plan.intake);
 
 const blocks = plannerBlocks({
   requirements: progress.requirements,
@@ -49,6 +51,13 @@ const blocks = plannerBlocks({
 
 // Every requirement met by completed courses alone: the degree is done.
 const graduated = degreeComplete(progress);
+// When the plan says the student finishes (see graduation.ts).
+const graduation = expectedGraduation({
+  complete: graduated,
+  onTrack: degreeOnTrack(progress),
+  groups: byTerm,
+  intake: plan.intake,
+});
 ---
 
 <!doctype html>
@@ -100,7 +109,7 @@ const graduated = degreeComplete(progress);
       <StudyPlan plan={plan} semesterGroups={semesterGroups} empty={chosen.length === 0} />
 
       <h2 id="degree-progress">Degree Progress</h2>
-      <DegreeProgress progress={progress} />
+      <DegreeProgress progress={progress} graduation={graduation} />
     </main>
     <script>
       // The form posts and redirects, so the submitting tab re-renders from

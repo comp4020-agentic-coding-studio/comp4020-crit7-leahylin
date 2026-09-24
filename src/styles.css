@@ -417,6 +417,25 @@ button {
   border: 1px solid var(--anu-gold-tint);
 }
 
+/* When the plan says the student finishes. */
+.graduation {
+  margin: 0.8rem 0 0;
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--unigrey);
+  color: var(--anu-gold-tint);
+  font-size: 0.95rem;
+}
+
+.graduation strong {
+  color: var(--anu-white);
+  font-size: 1.15rem;
+}
+
+.graduation.expected,
+.graduation.complete {
+  color: var(--anu-white);
+}
+
 /* --- requirements: one line each, open for the detail --------------- */
 
 .req-intro {
