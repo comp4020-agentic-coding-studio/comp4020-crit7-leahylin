@@ -1,5 +1,10 @@
 ---
-import { canDeletePlan, listPlans, listSpecialisations, planProgress } from "../lib/db";
+import {
+  canDeletePlan,
+  listPlans,
+  listSpecialisations,
+  planProgress,
+} from "../lib/db";
 import { degreeComplete } from "../lib/progress";
 import "../styles.css";
 
@@ -40,26 +45,35 @@ const plans = listPlans().map((plan) => {
     </nav>
     <main>
       <h1>Am I on track to graduate?</h1>
-      <p>
-        Programs and Courses states the Master of Computing's rules as prose.
-        The course planner records what you enrolled in. Neither one checks
-        your plan against the rules — so this does. Add the courses you've
-        finished and the ones you intend to take, and it reports where each
-        of the degree's requirements actually stands.
-      </p>
-      <p class="note">
-        Every course counts toward at most one requirement, the way a real
-        audit works, so a compulsory course can't quietly fill an elective
-        slot as well.
+      {
+        /* Leads with the scoping, not the degree description: every semester
+          this app knows about — the intake choice, the dropdowns, the
+          graduation date — is built for a 2025 intake specifically, not a
+          general calendar. Someone who started a different year would get
+          wrong semester labels and a wrong graduation date, so this has to
+          be the first thing said, not a footnote. */
+      }
+      <p class="scope-banner">
+        Built for a student starting the two-year full-time Master of Computing
+        (7706XMCOMP) at ANU in <strong>2025 Semester 1</strong> or{" "}
+        <strong>2025 Semester 2</strong>.
       </p>
 
-      {/* Starting a plan comes first, on one line: it's what a first visit
-          is for, and it shouldn't sit below a long list of plans. */}
+      {
+        /* Starting a plan comes first, on one line: it's what a first visit
+          is for, and it shouldn't sit below a long list of plans. */
+      }
       <h2>Start a plan</h2>
       <form method="post" action="/api/plans" class="picker new-plan">
         <div class="field grow">
           <label for="label">Plan name</label>
-          <input id="label" name="label" required maxlength="80" placeholder="e.g. 2026 full-time" />
+          <input
+            id="label"
+            name="label"
+            required
+            maxlength="80"
+            placeholder="e.g. 2025 Master of Computing"
+          />
         </div>
         <button>Create plan</button>
       </form>
@@ -67,50 +81,59 @@ const plans = listPlans().map((plan) => {
       <h2>Your plans</h2>
       {
         plans.length === 0 ? (
-          <p>No plans yet — make one below.</p>
+          <p>No plans yet — make one above.</p>
         ) : (
           <ul class="plans">
-            {plans.map(({ plan, specialisation, completed, planned, counted, required, complete }) => (
-              <li class:list={["plan-card", { complete }]}>
-                <a href={`/plan/${plan.slug}/`}>{plan.label}</a>
-                <span class="plan-spec">
-                  {specialisation ?? "No specialisation declared"}
-                  {complete && <span class="plan-done">Complete</span>}
-                </span>
-                <progress
-                  value={Math.min(counted, required)}
-                  max={required}
-                  aria-label={`${plan.label}: ${counted} of ${required} units`}
-                />
-                <span class="figure">
-                  {counted} of {required} units · {completed} completed ·{" "}
-                  {planned} planned
-                </span>
-                {/* The demo plan has no Delete: it is re-created at every
+            {plans.map(
+              ({
+                plan,
+                specialisation,
+                completed,
+                planned,
+                counted,
+                required,
+                complete,
+              }) => (
+                <li class:list={["plan-card", { complete }]}>
+                  <a href={`/plan/${plan.slug}/`}>{plan.label}</a>
+                  <span class="plan-spec">
+                    {specialisation ?? "No specialisation declared"}
+                    {complete && <span class="plan-done">Complete</span>}
+                  </span>
+                  <progress
+                    value={Math.min(counted, required)}
+                    max={required}
+                    aria-label={`${plan.label}: ${counted} of ${required} units`}
+                  />
+                  <span class="figure">
+                    {counted} of {required} units · {completed} completed ·{" "}
+                    {planned} planned
+                  </span>
+                  {/* The demo plan has no Delete: it is re-created at every
                     boot, so deleting it would only bring it back. */}
-                {canDeletePlan(plan.slug) && (
-                  <details class="plan-delete">
-                    <summary>
-                      Delete<span class="sr-only"> {plan.label}</span>
-                    </summary>
-                    <form method="post" action="/api/plan-delete">
-                      <input type="hidden" name="slug" value={plan.slug} />
-                      <p>
-                        Delete “{plan.label}” and every course in it? This can't
-                        be undone.
-                      </p>
-                      <button class="danger">
-                        Delete plan<span class="sr-only"> {plan.label}</span>
-                      </button>
-                    </form>
-                  </details>
-                )}
-              </li>
-            ))}
+                  {canDeletePlan(plan.slug) && (
+                    <details class="plan-delete">
+                      <summary>
+                        Delete<span class="sr-only"> {plan.label}</span>
+                      </summary>
+                      <form method="post" action="/api/plan-delete">
+                        <input type="hidden" name="slug" value={plan.slug} />
+                        <p>
+                          Delete “{plan.label}” and every course in it? This
+                          can't be undone.
+                        </p>
+                        <button class="danger">
+                          Delete plan<span class="sr-only"> {plan.label}</span>
+                        </button>
+                      </form>
+                    </details>
+                  )}
+                </li>
+              ),
+            )}
           </ul>
         )
       }
-
     </main>
   </body>
 </html>

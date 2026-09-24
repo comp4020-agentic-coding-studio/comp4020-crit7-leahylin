@@ -508,6 +508,19 @@ button {
 
 /* --- home page ------------------------------------------------------ */
 
+/* The scoping statement right under the h1 — every semester, intake and
+   graduation date this app computes assumes a 2025 intake, so this has to
+   read as the headline. */
+.scope-banner {
+  margin: 0.75rem 0;
+  padding: 0.7rem 1rem;
+  background: var(--anu-white);
+  border: 1px solid var(--anu-gold);
+  border-left: 4px solid var(--anu-gold);
+  border-radius: 0.5rem;
+  font-weight: 600;
+}
+
 .new-plan input {
   width: 100%;
   padding: 0.45rem 0.6rem;
