@@ -1,0 +1,137 @@
+---
+// The inside of one Course Planner category: its rule, then either the one
+// line saying it's closed, or what can still be added to it. Shared by a
+// category's own box and by a part of a specialisation's combined box, so
+// the two can't drift apart.
+import { isTwoSemester, unitsPerSemester } from "../lib/db";
+import type { CategoryView } from "../lib/course-planner";
+
+interface Props {
+  view: CategoryView;
+  slug: string;
+  semesters: string[];
+  lastSemester: string | undefined;
+}
+
+const { view, slug, semesters, lastSemester } = Astro.props;
+const {
+  settled,
+  ruleText,
+  boxClosed,
+  allFoldedFloorsMet,
+  headroom,
+  options,
+  selectId,
+  semesterId,
+} = view;
+
+/** "6u", or "6+6u over two semesters" for COMP8715. */
+function unitsLabel(course: { code: string; units: number }): string {
+  const each = unitsPerSemester(course);
+  return isTwoSemester(course)
+    ? `${each}+${each}u, two consecutive semesters`
+    : `${course.units}u`;
+}
+---
+
+{
+  /* The category's own rule, then any specialisation floors
+     folded into it, read as ONE sentence-run rather than a
+     line each: "24 units from ... list. A minimum of 12 units
+     of 8000-level courses." Whether each floor is covered
+     folds into the ONE status line below, once this box has
+     nothing left to add. */
+  !settled && ruleText && <p class="rule">{ruleText}</p>
+}
+{boxClosed ? (
+  <p class="note">
+    {allFoldedFloorsMet
+      ? "Every course in this category is already in your plan."
+      : "Not yet met."}
+  </p>
+) : (
+  <>
+  {headroom.limiting.map(({ floor, unitsOutside, limit }) => (
+    <p class="limit">
+      {unitsOutside} units of this specialisation are already
+      below 8000 level, and at most {limit} can be, because it
+      needs at least {floor.requiredUnits} units at 8000 level.
+      Courses below 8000 level are no longer offered here.
+    </p>
+  ))}
+  <form method="post" action="/api/plan-items" class="picker">
+    <input type="hidden" name="slug" value={slug} />
+    {/* Each control sits under its own small label, so the
+        whole form reads as one row — course, semester,
+        status, Add — and wraps as a row, not label by label. */}
+    <div class="field course-field">
+      <label for={selectId}>Add a course</label>
+      <select id={selectId} name="courseId" required>
+        {options.map((course) => (
+          <option
+            value={course.id}
+            data-two-semester={isTwoSemester(course) ? "" : undefined}
+          >
+            {course.code} — {course.title} ({unitsLabel(course)})
+          </option>
+        ))}
+      </select>
+    </div>
+    <div class="field">
+      <label for={semesterId}>Semester</label>
+      <select id={semesterId} name="semester">
+        <option value="">Not yet scheduled</option>
+        {semesters.map((semester) => (
+          <option
+            value={semester}
+            data-last={semester === lastSemester ? "" : undefined}
+          >
+            {semester}
+          </option>
+        ))}
+      </select>
+    </div>
+    <fieldset class="field">
+      <legend>Status</legend>
+      <div class="choices">
+        <label>
+          <input
+            type="radio"
+            name="status"
+            value="completed"
+            checked
+          />{" "}
+          Completed
+        </label>
+        <label>
+          <input type="radio" name="status" value="planned" />{" "}
+          Planned
+        </label>
+      </div>
+    </fieldset>
+    <button>Add</button>
+  </form>
+  </>
+)}
+
+<script>
+  // COMP8715 runs over two consecutive semesters, so it can't start in
+  // the plan's last one. When it's the course picked in an Add form,
+  // that semester is switched off (the server refuses it regardless).
+  for (const form of document.querySelectorAll<HTMLFormElement>("form.picker")) {
+    const course = form.querySelector<HTMLSelectElement>('select[name="courseId"]');
+    const semester = form.querySelector<HTMLSelectElement>('select[name="semester"]');
+    if (!course || !semester) continue;
+    const sync = () => {
+      const twoSemester =
+        course.selectedOptions[0]?.hasAttribute("data-two-semester") ?? false;
+      for (const option of semester.options) {
+        if (!option.hasAttribute("data-last")) continue;
+        option.disabled = twoSemester;
+        if (twoSemester && option.selected) semester.value = "";
+      }
+    };
+    course.addEventListener("change", sync);
+    sync();
+  }
+</script>

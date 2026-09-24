@@ -1,23 +1,35 @@
 :root {
-  --ink: #1a1a1a;
-  --dim: #5a5f66;
-  --line: #d8dce1;
-  --card: #ffffff;
-  --ground: #f7f8fa;
-  --link: #0b5fff;
-  --good: #1a7f4b;
-  --track: #2b6cb0;
-  --warn-ink: #8a3400;
-  --warn-bg: #fff4ec;
+  /* ANU palette. Backgrounds: gold tint, black, white, ANU gold.
+     Text: black, white, ANU gold, Unigrey. ANU gold on white or on the
+     gold tint is below 4.5:1, so gold is used for fills, borders and
+     underlines, and text on it is black. */
+  --anu-gold: #be830e;
+  --anu-gold-tint: #f5edde;
+  --anu-black: #000000;
+  --anu-white: #ffffff;
+  --unigrey: #333333;
+
+  --ink: var(--anu-black);
+  --dim: var(--unigrey);
+  --line: var(--anu-gold);
+  --card: var(--anu-white);
+  --ground: var(--anu-gold-tint);
+  --link: var(--anu-black);
+  --good: var(--anu-black);
+  --track: var(--anu-black);
+  --warn-ink: var(--anu-black);
+  --warn-bg: var(--anu-gold-tint);
+  color-scheme: light;
 }
 
 body {
   margin: 0;
-  padding: 2rem 1rem 4rem;
+  padding: 0 1rem 4rem;
   font-family: system-ui, sans-serif;
   line-height: 1.6;
   color: var(--ink);
   background: var(--ground);
+  accent-color: var(--anu-gold);
 }
 
 main {
@@ -25,15 +37,37 @@ main {
   margin: 0 auto;
 }
 
+/* Full-bleed: the negative margins undo the body's side padding, and the
+   inline padding puts the links on the same left edge as <main>. Padding
+   percentages resolve against the body's content width (viewport - 2rem),
+   so (100% - 50rem) / 2 is (viewport - 52rem) / 2. */
 nav {
-  max-width: 52rem;
-  margin: 0 auto 1.5rem;
+  margin: 0 -1rem 2rem;
   display: flex;
-  gap: 1rem;
+  gap: 1.5rem;
+  padding: 0.9rem max(1rem, calc((100% - 50rem) / 2));
+  background: var(--anu-black);
+  border-bottom: 4px solid var(--anu-gold);
+}
+
+nav a {
+  color: var(--anu-white);
+  font-weight: 600;
+  text-decoration: none;
+  padding-block: 0.1rem;
+  border-bottom: 2px solid transparent;
+}
+
+nav a:hover,
+nav a:focus-visible {
+  border-bottom-color: var(--anu-gold);
 }
 
 a {
   color: var(--link);
+  text-decoration-color: var(--anu-gold);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 0.15em;
 }
 
 h1 {
@@ -44,6 +78,16 @@ h1 {
 h2 {
   margin-block: 2rem 0.75rem;
   font-size: 1.15rem;
+}
+
+/* A page's own sections — not the headings inside cards — are clearly a
+   step up from the card titles, with a gold rule under each. */
+main > h2 {
+  margin-block: 2.75rem 1rem;
+  padding-block-end: 0.35rem;
+  font-size: 1.5rem;
+  line-height: 1.3;
+  border-bottom: 2px solid var(--anu-gold);
 }
 
 .note,
@@ -86,20 +130,43 @@ h2 {
 }
 
 .bucket.over {
-  border-color: #e0a27a;
+  border-color: var(--anu-black);
+  border-width: 2px;
 }
 
 .bar {
+  /* The figure sits above a full-width bar, so every bar on the page is
+     the same length whatever the figure says, and they line up. */
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.75rem;
+  flex-direction: column;
+  gap: 0.3rem;
   margin-block: 0.6rem 0;
 }
 
+.bar .figure {
+  order: -1;
+}
+
 progress {
-  flex: 1 1 12rem;
+  appearance: none;
+  width: 100%;
   height: 0.6rem;
+  border: 0;
+  border-radius: 1rem;
+  overflow: hidden;
+  background: var(--anu-gold-tint);
+}
+
+progress::-webkit-progress-bar {
+  background: var(--anu-gold-tint);
+}
+
+progress::-webkit-progress-value {
+  background: var(--anu-gold);
+}
+
+progress::-moz-progress-bar {
+  background: var(--anu-gold);
 }
 
 .figure {
@@ -114,6 +181,7 @@ progress {
   border-radius: 0.35rem;
   background: var(--warn-bg);
   color: var(--warn-ink);
+  border-left: 4px solid var(--anu-gold);
   font-size: 0.9rem;
 }
 
@@ -125,12 +193,484 @@ progress {
   color: var(--dim);
 }
 
+.verdict.done,
+.verdict.on-track,
+.verdict.over-the-limit {
+  padding: 0.05rem 0.55rem;
+  border-radius: 1rem;
+}
+
 .verdict.done {
-  color: var(--good);
+  background: var(--anu-black);
+  color: var(--anu-white);
 }
 
 .verdict.on-track {
-  color: var(--track);
+  background: var(--anu-gold);
+  color: var(--anu-black);
+}
+
+/* A form control given width: 100% must include its own padding and
+   border in that width, or it overflows its container by exactly those. */
+input,
+select,
+button {
+  box-sizing: border-box;
+}
+
+.chosen-head span:first-child {
+  padding-left: calc(0.7rem + 1px);
+}
+
+/* --- plan page subtitle -------------------------------------------- */
+
+.subtitle {
+  margin: 0;
+  color: var(--dim);
+  font-size: 1rem;
+}
+
+/* --- study plan: one box per semester ------------------------------- */
+
+.sem-units {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A semester with nothing in it yet: a single quiet line, dashed, so it
+   reads as a gap to fill rather than as a finished box. */
+.semester-group.empty {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.25rem 1rem;
+  padding-block: 0.55rem;
+  margin-block-end: 0.4rem;
+  background: transparent;
+  border-style: dashed;
+}
+
+.semester-group.empty h3 {
+  color: var(--dim);
+}
+
+.semester-group.empty .note {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.semester-group.overload {
+  border-color: var(--anu-black);
+  border-width: 2px;
+}
+
+.semester-group.overload .sem-units {
+  color: var(--anu-black);
+  background: var(--anu-gold-tint);
+  border: 1px solid var(--anu-black);
+  border-radius: 1rem;
+  padding: 0 0.5rem;
+}
+
+/* --- degree progress: a requirement's standing, on its left edge ----- */
+
+.bucket[class*="is-"] {
+  border-left-width: 6px;
+}
+
+.bucket.is-done {
+  border-left-color: var(--anu-black);
+}
+
+.bucket.is-on-track {
+  border-left-color: var(--anu-gold);
+}
+
+.bucket.is-started,
+.bucket.is-not-started,
+.bucket.is-within-limit {
+  border-left-color: var(--anu-gold-tint);
+}
+
+.bucket.is-over-the-limit {
+  border-left-color: var(--anu-black);
+  border-left-style: double;
+}
+
+/* --- Degree Progress: the 96-unit total, set apart from the rest ----- */
+
+/* The degree's size, not one more requirement: a black card with a gold
+   edge and a larger figure, so it reads as the headline the requirements
+   below add up to. Its left edge doesn't take the requirement colours. */
+.bucket.total-card,
+.bucket.total-card[class*="is-"] {
+  background: var(--anu-black);
+  color: var(--anu-white);
+  border: 1px solid var(--anu-black);
+  border-bottom: 4px solid var(--anu-gold);
+  padding-block: 1.1rem;
+  margin-block-end: 1.25rem;
+}
+
+.bucket.total-card h3 {
+  font-size: 1.15rem;
+}
+
+.bucket.total-card .figure {
+  color: var(--anu-white);
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.bucket.total-card progress {
+  height: 0.8rem;
+  background: var(--unigrey);
+}
+
+.bucket.total-card progress::-webkit-progress-bar {
+  background: var(--unigrey);
+}
+
+.bucket.total-card .more summary,
+.bucket.total-card .rule {
+  color: var(--anu-gold-tint);
+}
+
+.bucket.total-card .more summary:hover,
+.bucket.total-card .more summary:focus-visible {
+  color: var(--anu-white);
+}
+
+/* --- home page ------------------------------------------------------ */
+
+.new-plan input {
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  font: inherit;
+}
+
+.new-plan {
+  max-width: 40rem;
+}
+
+.plan-done {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0 0.55rem;
+  border-radius: 1rem;
+  background: var(--anu-black);
+  color: var(--anu-white);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  vertical-align: 0.1em;
+}
+
+.plans .plan-card.complete {
+  border-left: 6px solid var(--anu-black);
+}
+
+/* --- degree complete ---------------------------------------------- */
+
+.congrats {
+  margin: 1rem 0 0;
+  padding: 1rem 1.2rem;
+  background: var(--anu-black);
+  color: var(--anu-white);
+  border-radius: 0.5rem;
+  border-bottom: 4px solid var(--anu-gold);
+  animation: congrats-in 0.5s ease-out;
+}
+
+main > .congrats h2 {
+  margin: 0 0 0.3rem;
+  padding: 0;
+  border: 0;
+  font-size: 1.5rem;
+  color: var(--anu-white);
+}
+
+.congrats h2::after {
+  content: "";
+  display: block;
+  width: 3rem;
+  height: 3px;
+  margin-top: 0.35rem;
+  background: var(--anu-gold);
+}
+
+.congrats p {
+  margin: 0;
+}
+
+@keyframes congrats-in {
+  from {
+    opacity: 0;
+    transform: translateY(-0.5rem);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .congrats {
+    animation: none;
+  }
+}
+
+/* The confetti layer: over everything, but never in the way of a click. */
+.confetti {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  pointer-events: none;
+}
+
+/* --- in-page links ------------------------------------------------ */
+
+.jump {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.jump a {
+  display: inline-block;
+  padding: 0.25rem 0.8rem;
+  border: 1px solid var(--anu-gold);
+  border-radius: 1rem;
+  background: var(--anu-white);
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.jump a:hover,
+.jump a:focus-visible {
+  background: var(--anu-black);
+  color: var(--anu-white);
+  border-color: var(--anu-black);
+}
+
+/* Clear the progress summary that sticks to the top of the viewport — up
+   to three lines tall on a phone once it also says "Congratulations". */
+h2[id] {
+  scroll-margin-top: 9rem;
+}
+
+/* --- progress summary: a sticky bar, or a card beside the page ------ */
+
+.summary {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.2rem 1rem;
+  margin: 1rem 0 0;
+  padding: 0.5rem 0.9rem;
+  background: var(--anu-white);
+  border: 1px solid var(--anu-gold);
+  border-top: 4px solid var(--anu-gold);
+  border-radius: 0 0 0.5rem 0.5rem;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.08);
+  font-size: 0.9rem;
+}
+
+main > .summary h2 {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--dim);
+}
+
+.summary p {
+  margin: 0;
+}
+
+.summary-figure strong {
+  font-size: 1.15rem;
+}
+
+.summary progress {
+  flex: 1 1 8rem;
+  min-width: 6rem;
+}
+
+.summary-split,
+.summary-reqs {
+  color: var(--dim);
+}
+
+.summary-reqs,
+.summary-link {
+  display: none;
+}
+
+/* Degree complete: the summary says so too, in a display face that sets it
+   apart from the figures around it. A serif already on every system, so
+   nothing extra is fetched. */
+.summary-congrats {
+  font-family: Georgia, "Times New Roman", serif;
+  font-style: italic;
+  font-weight: 700;
+  font-size: 1.15rem;
+  line-height: 1.25;
+  color: var(--anu-gold);
+}
+
+.summary.graduated {
+  background: var(--anu-black);
+  border-color: var(--anu-black);
+  border-top-color: var(--anu-gold);
+  color: var(--anu-white);
+}
+
+.summary.graduated h2,
+.summary.graduated .summary-split,
+.summary.graduated .summary-reqs {
+  color: var(--anu-gold-tint);
+}
+
+.summary.graduated a {
+  color: var(--anu-white);
+}
+
+.summary.graduated progress {
+  background: var(--unigrey);
+}
+
+/* Wide enough for a column beside the 52rem page: the summary leaves the
+   top of the page and sits to its right, with room for more detail. */
+@media (min-width: 84rem) {
+  .summary {
+    position: fixed;
+    top: 6rem;
+    left: calc(50% + 26rem + 1.5rem);
+    width: 13rem;
+    margin: 0;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.45rem;
+    padding: 0.9rem 1rem;
+    border-radius: 0.5rem;
+  }
+
+  .summary progress {
+    flex: none;
+    width: 100%;
+  }
+
+  .summary-reqs,
+  .summary-link {
+    display: block;
+  }
+
+  h2[id] {
+    scroll-margin-top: 1rem;
+  }
+}
+
+/* --- behind "Details" on a Degree Progress card -------------------- */
+
+.more {
+  margin-block: 0.5rem 0;
+}
+
+.more summary {
+  cursor: pointer;
+  width: fit-content;
+  font-size: 0.85rem;
+  color: var(--dim);
+  text-decoration: underline;
+  text-decoration-color: var(--anu-gold);
+  text-underline-offset: 0.15em;
+}
+
+.more summary:hover,
+.more summary:focus-visible {
+  color: var(--ink);
+}
+
+.more[open] summary {
+  margin-block-end: 0.25rem;
+}
+
+/* --- a specialisation's combined box: one part per rule ------------- */
+
+.spec-group .part {
+  margin-block-start: 0.8rem;
+  padding-block-start: 0.7rem;
+  border-top: 1px solid var(--anu-gold-tint);
+}
+
+.spec-group .part h4 {
+  margin: 0;
+  font-size: 0.95rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+/* A part with nothing left to add: its name and one line, side by side. */
+.spec-group .part.settled {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.25rem 1rem;
+}
+
+.spec-group .part.settled .kindtag {
+  display: none;
+}
+
+.spec-group .part.settled .note {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.spec-group .part.settled .note::before {
+  content: "✓ ";
+  color: var(--anu-gold);
+  font-weight: 700;
+}
+
+/* --- a category with nothing left to add ---------------------------- */
+
+.bucket.settled {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.25rem 1rem;
+  padding-block: 0.55rem;
+  margin-block-end: 0.4rem;
+}
+
+.bucket.settled h3 {
+  font-weight: 600;
+}
+
+.bucket.settled .note {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.bucket.settled .note::before {
+  content: "✓ ";
+  color: var(--anu-gold);
+  font-weight: 700;
 }
 
 /* --- the plan's courses -------------------------------------------- */
@@ -146,6 +686,116 @@ progress {
   padding-block: 0.3rem;
 }
 
+.plans .plan-card {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.8rem 1rem;
+  margin-block-end: 0.6rem;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+}
+
+.plan-card > a {
+  font-weight: 600;
+  font-size: 1.05rem;
+  width: fit-content;
+}
+
+/* The whole card opens the plan: the link's box is stretched over the card,
+   so a click anywhere on it is a click on the link. It stays ONE link with
+   the plan's name as its text, which is what a screen reader announces. */
+.plans .plan-card {
+  position: relative;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.plan-card > a::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
+.plans .plan-card:hover,
+.plans .plan-card:focus-within {
+  border-color: var(--anu-black);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.1);
+}
+
+.plan-card > a:focus-visible {
+  outline: none;
+}
+
+.plan-card:focus-within {
+  outline: 2px solid var(--anu-black);
+  outline-offset: 2px;
+}
+
+.plan-spec {
+  font-size: 0.9rem;
+  color: var(--dim);
+}
+
+/* Delete sits in the card's top-right corner, lifted above the stretched
+   link so clicking it opens the confirmation instead of the plan. */
+.plan-delete {
+  position: absolute;
+  top: 0.7rem;
+  right: 1rem;
+  z-index: 1;
+  font-size: 0.85rem;
+}
+
+.plan-delete summary {
+  cursor: pointer;
+  list-style: none;
+  color: var(--unigrey);
+  text-decoration: underline;
+  text-decoration-color: var(--anu-gold);
+  text-underline-offset: 0.15em;
+  text-align: right;
+}
+
+.plan-delete summary::-webkit-details-marker {
+  display: none;
+}
+
+.plan-delete summary:hover,
+.plan-delete summary:focus-visible {
+  color: var(--anu-black);
+}
+
+/* Open, the confirmation drops down over the card from that corner. */
+.plan-delete[open] form {
+  margin-top: 0.4rem;
+  width: min(17rem, 70vw);
+  padding: 0.7rem 0.8rem;
+  background: var(--anu-white);
+  border: 1px solid var(--anu-black);
+  border-radius: 0.4rem;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.15);
+}
+
+.plan-delete p {
+  margin: 0 0 0.5rem;
+}
+
+/* The one button that destroys something: black, not the gold of the
+   actions that add. */
+button.danger {
+  background: var(--anu-black);
+  border-color: var(--anu-black);
+  color: var(--anu-white);
+}
+
+button.danger:hover,
+button.danger:focus-visible {
+  background: var(--unigrey);
+  border-color: var(--unigrey);
+}
+
 .chosen li {
   display: flex;
   flex-wrap: wrap;
@@ -158,24 +808,120 @@ progress {
   margin-block-end: 0.4rem;
 }
 
+.chosen-head {
+  display: none;
+}
+
+/* A two-semester course: which half this row is. */
+.chosen .part {
+  font-size: 0.8rem;
+  color: var(--dim);
+}
+
+/* Its second-semester row carries no controls, so it reads as quieter. */
+.chosen li.continued {
+  background: var(--anu-gold-tint);
+  border-style: dashed;
+}
+
+.semester-text {
+  font-size: 0.85rem;
+  color: var(--dim);
+}
+
+.chosen .course {
+  flex: 1 1 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.chosen .semester {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.chosen button {
+  white-space: nowrap;
+}
+
+.chosen select {
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.2rem 0.3rem;
+}
+
+/* Wide enough for one line per course: the rows share one set of columns
+   (course, units, semester, status, actions) so they line up down the
+   whole group instead of each row wrapping its own way. The tracks are
+   fixed rather than auto so every semester group lines up with the next. */
+@media (min-width: 56rem) {
+  .chosen {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 2.5rem 10.5rem 6.75rem 10rem 4.5rem;
+    gap: 0.4rem 0.75rem;
+  }
+
+  .chosen .semester select,
+  .chosen button.secondary {
+    width: 100%;
+  }
+
+  /* Same columns as the rows below. The rows are a subgrid of the list, so
+     their column lines sit on the list's own tracks, not inset by a row's
+     padding. Only the first label is inset, to sit over the course text. */
+  .chosen-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 2.5rem 10.5rem 6.75rem 10rem 4.5rem;
+    column-gap: 0.75rem;
+    padding: 0.3rem 0 0.2rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--dim);
+  }
+
+  .chosen li {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: subgrid;
+    margin: 0;
+  }
+}
+
 .code {
   font-family: ui-monospace, monospace;
   font-weight: 600;
 }
 
 .chosen .title {
-  flex: 1 1 14rem;
+  min-width: 0;
 }
 
-.units,
-.status {
+.units {
   font-size: 0.85rem;
   color: var(--dim);
 }
 
-.status.completed {
-  color: var(--good);
+/* Same pill as the verdicts in Degree Progress, so "completed" reads the
+   same way wherever it appears. */
+.status {
+  justify-self: start;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
   font-weight: 600;
+  padding: 0.05rem 0.55rem;
+  border-radius: 1rem;
+  border: 1px solid var(--anu-gold);
+  background: var(--anu-gold-tint);
+  color: var(--anu-black);
+}
+
+.status.completed {
+  background: var(--anu-black);
+  border-color: var(--anu-black);
+  color: var(--anu-white);
 }
 
 /* --- forms ---------------------------------------------------------- */
@@ -213,6 +959,17 @@ button {
   padding: 0.4rem 0.9rem;
   font: inherit;
   cursor: pointer;
+  background: var(--anu-gold);
+  color: var(--anu-black);
+  border: 1px solid var(--anu-gold);
+  border-radius: 0.3rem;
+}
+
+button:hover,
+button:focus-visible {
+  background: var(--anu-black);
+  color: var(--anu-white);
+  border-color: var(--anu-black);
 }
 
 .inline {
@@ -222,6 +979,39 @@ button {
 .inline button {
   font-size: 0.8rem;
   padding: 0.2rem 0.5rem;
+}
+
+/* Three weights of button. Gold fill is for the action a form exists to
+   do (Add, Declare, Create plan); a secondary action is outlined; Remove
+   is quiet, so the destructive action is never the loudest thing in a row. */
+button.secondary {
+  background: var(--anu-white);
+  color: var(--anu-black);
+  border-color: var(--anu-gold);
+}
+
+button.secondary:hover,
+button.secondary:focus-visible {
+  background: var(--anu-gold-tint);
+  color: var(--anu-black);
+  border-color: var(--anu-black);
+}
+
+button.quiet {
+  background: none;
+  border-color: transparent;
+  color: var(--unigrey);
+  text-decoration: underline;
+  text-decoration-color: var(--anu-gold);
+  text-underline-offset: 0.15em;
+}
+
+button.quiet:hover,
+button.quiet:focus-visible {
+  background: none;
+  color: var(--anu-black);
+  border-color: transparent;
+  text-decoration-thickness: 2px;
 }
 
 /* --- /readme/ ------------------------------------------------------- */
@@ -250,20 +1040,6 @@ img {
   max-width: 100%;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --ink: #e8eaed;
-    --dim: #a0a6ad;
-    --line: #363b42;
-    --card: #1e2227;
-    --ground: #15181c;
-    --link: #78a9ff;
-    --good: #5fd39b;
-    --track: #7cb0ea;
-    --warn-ink: #ffcfae;
-    --warn-bg: #3a2416;
-  }
-}
 
 .kindtag {
   font-size: 0.7rem;
@@ -281,7 +1057,9 @@ img {
 }
 
 .verdict.over-the-limit {
-  color: var(--warn-ink);
+  background: var(--anu-gold-tint);
+  color: var(--anu-black);
+  border: 1px solid var(--anu-black);
 }
 
 .sr-only {
@@ -296,33 +1074,69 @@ img {
   border: 0;
 }
 
+/* Why the add-a-course list got shorter (a minimum it has to protect). */
+.limit {
+  margin-block: 0.6rem 0;
+  padding: 0.45rem 0.7rem;
+  border-left: 4px solid var(--anu-gold);
+  background: var(--anu-gold-tint);
+  border-radius: 0.35rem;
+  font-size: 0.9rem;
+  color: var(--ink);
+}
+
+/* The add-a-course form: one row of labelled controls, bottoms aligned,
+   wrapping as whole fields when the card is too narrow for all four. */
 .picker {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem 0.75rem;
-  margin-block: 0.5rem 0;
+  align-items: flex-end;
+  gap: 0.6rem 0.9rem;
+  margin-block: 0.6rem 0;
+}
+
+.picker .field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.picker .field > label,
+.picker legend {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--dim);
+  padding: 0;
+}
+
+.picker .course-field,
+.picker .grow {
+  flex: 1 1 18rem;
 }
 
 .picker select {
-  padding: 0.4rem 0.6rem;
+  padding: 0.4rem 0.5rem;
   font: inherit;
-}
-
-.picker select[name="courseId"] {
-  flex: 1 1 20rem;
-  min-width: 14rem;
+  font-size: 0.95rem;
+  width: 100%;
 }
 
 .picker fieldset {
-  border: 1px solid var(--line);
-  border-radius: 0.35rem;
-  display: flex;
-  gap: 0.75rem;
-  padding: 0.3rem 0.6rem;
+  border: 0;
+  padding: 0;
   margin: 0;
 }
 
-.picker fieldset label {
-  font-size: 0.9rem;
+/* The radios sit in a box the same height as the selects beside them. */
+.picker .choices {
+  display: flex;
+  gap: 0.9rem;
+  align-items: center;
+  min-height: 2.3rem;
+  font-size: 0.95rem;
+}
+
+.picker button {
+  min-height: 2.3rem;
 }

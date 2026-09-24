@@ -1,8 +1,12 @@
 ---
-import { foldSpecialisationFloors } from "../../lib/category-groups";
+import Congrats from "../../components/Congrats.astro";
+import CoursePlanner from "../../components/CoursePlanner.astro";
+import DegreeProgress from "../../components/DegreeProgress.astro";
+import ProgressSummary from "../../components/ProgressSummary.astro";
+import StudyPlan from "../../components/StudyPlan.astro";
+import { plannerBlocks } from "../../lib/course-planner";
 import {
-  type ChosenItem,
-  availableForRequirement,
+  everySemester,
   getPlan,
   listCourses,
   listSpecialisations,
@@ -10,7 +14,13 @@ import {
   semesterOptions,
   studyPlanBySemester,
 } from "../../lib/db";
+import { degreeComplete } from "../../lib/progress";
 import "../../styles.css";
+
+// One plan: its Course Planner, Study Plan and Degree Progress. This page
+// loads the plan and lays the sections out; each section is a component in
+// src/components, and the Course Planner's decisions live in
+// src/lib/course-planner.ts.
 
 const { slug } = Astro.params;
 const plan = slug ? getPlan(slug) : undefined;
@@ -18,56 +28,27 @@ if (!plan) {
   return new Response("No such plan", { status: 404 });
 }
 
-const { progress, chosen, poolsByKey, specialisationIdByKey } =
+const { progress, chosen, poolsByKey, specialisationIdByKey, levelFloorKeys } =
   planProgress(plan);
-const catalogue = listCourses();
-const chosenIds = new Set(chosen.map((item) => item.course.id));
-const semesters = semesterOptions();
-const semesterGroups = studyPlanBySemester(chosen);
+const specialisations = listSpecialisations();
 
-const total = progress.requirements.find((r) => r.kind === "total");
-// Every non-total requirement doubles as a Course Planner category: its own
-// pool, its own "what's left to add" selector. Whether the engine treats it
-// as allocating, a floor, or a cap is invisible here — adding a course is
-// the same action regardless of which kind of rule is filling up behind it.
-const categories = progress.requirements.filter((r) => r.kind !== "total");
+// The plan's semesters run from its intake (see semesterOptions).
+const semesters = semesterOptions(plan.intake);
+// Every semester, empty ones included, so a gap in the plan shows as a gap.
+const semesterGroups = everySemester(studyPlanBySemester(chosen), plan.intake);
 
-// A specialisation's own floor rules (its internal minimums) don't have a
-// pool of their own to add from any more than the degree-wide one does — see
-// the earlier fix. But unlike the degree-wide floor, a specialisation floor
-// DOES have a natural home: the specialisation's own "X courses" bucket, one
-// box up. foldSpecialisationFloors folds it straight into that box instead
-// of giving it a disconnected section of its own — see src/lib/category-
-// groups.ts for the (separately tested) logic.
-const { visible: visibleCategories, foldedInto: floorsFoldedIntoKey } =
-  foldSpecialisationFloors(categories, specialisationIdByKey);
+const blocks = plannerBlocks({
+  requirements: progress.requirements,
+  catalogue: listCourses(),
+  chosenIds: new Set(chosen.map((item) => item.course.id)),
+  poolsByKey,
+  specialisationIdByKey,
+  levelFloorKeys,
+  specialisationLabel: (id) => specialisations.find((s) => s.id === id)?.label,
+});
 
-const allSpecialisations = listSpecialisations();
-const declared = allSpecialisations.find((s) => s.id === plan.specialisationId);
-
-// With no specialisation declared, 24 of the degree's 96 units have no rules
-// attached, so Degree Progress genuinely cannot account for them. Say so
-// rather than let a reader infer the requirements shown are all of them.
-const unaccounted = progress.specialisationModelled ? 0 : 24;
-
-function verdict(r: (typeof progress.requirements)[number]): string {
-  if (r.kind === "cap") return r.violated ? "over the limit" : "within limit";
-  if (r.satisfied) return "done";
-  if (r.onTrack) return "on track";
-  if (r.countedUnits > 0) return "started";
-  return "not started";
-}
-
-function semesterLabel(semester: string | null): string {
-  return semester ?? "Not yet scheduled";
-}
-
-// aria-labelledby is a space-separated list of ids, so an id built from a
-// label containing spaces ("sem-2026 Semester 1") is silently parsed as
-// three ids, none of which exist, and the section loses its accessible name.
-function semesterSlug(semester: string | null): string {
-  return (semester ?? "none").toLowerCase().replaceAll(/\s+/g, "-");
-}
+// Every requirement met by completed courses alone: the degree is done.
+const graduated = degreeComplete(progress);
 ---
 
 <!doctype html>
@@ -84,383 +65,42 @@ function semesterSlug(semester: string | null): string {
     </nav>
     <main data-plan={plan.slug}>
       <h1>{plan.label}</h1>
-      <p class="note">
-        Master of Computing (7706XMCOMP), 2025 rules. {progress.completedUnits} units
-        completed, {progress.plannedUnits} planned, {progress.totalUnits} in total.
+      {graduated && <Congrats completedUnits={progress.completedUnits} />}
+      {/* The unit figures live in the progress summary just below; this
+          line only says what the plan is being checked against. */}
+      <p class="subtitle">
+        Master of Computing (7706XMCOMP) · 2025 rules · starts {plan.intake}
       </p>
 
-      <h2>ANU Course Planner</h2>
+      <ProgressSummary progress={progress} graduated={graduated} />
+
+      {/* The page is three long sections; these jump between them so a
+          change in the planner doesn't mean scrolling to the bottom to see
+          what it did to the progress. */}
+      <ul class="jump" aria-label="On this page">
+        <li><a href="#course-planner">Course Planner</a></li>
+        <li><a href="#study-plan">Study Plan</a></li>
+        <li><a href="#degree-progress">Degree Progress</a></li>
+      </ul>
+
+      <h2 id="course-planner">ANU Course Planner</h2>
       <p class="note">
         Browse the degree's own categories and add a course to your study plan
         from whichever one it belongs to.
       </p>
+      <CoursePlanner
+        plan={plan}
+        blocks={blocks}
+        specialisations={specialisations}
+        specialisationModelled={progress.specialisationModelled}
+        semesters={semesters}
+      />
 
-      <section aria-labelledby="specialisation-heading" class="bucket">
-        <h3 id="specialisation-heading">Specialisation</h3>
-        <p class="rule">
-          One specialisation is a compulsory part of the Master of Computing,
-          worth 24 of its 96 units. Declaring one brings its own categories into
-          this section.
-        </p>
-        <form method="post" action="/api/plan-specialisation" class="stack">
-          <input type="hidden" name="slug" value={plan.slug} />
-          <label for="specialisationId">Declared specialisation</label>
-          <select id="specialisationId" name="specialisationId">
-            <option value="">None declared</option>
-            {
-              allSpecialisations.map((specialisation) => (
-                <option
-                  value={specialisation.id}
-                  selected={specialisation.id === plan.specialisationId}
-                >
-                  {specialisation.label}
-                  {specialisation.code ? ` (${specialisation.code})` : ""}
-                  {specialisation.modelled
-                    ? ""
-                    : " — requirements not yet modelled"}
-                </option>
-              ))
-            }
-          </select>
-          <button>Declare</button>
-        </form>
-        {
-          declared && !declared.modelled && (
-            <p class="warn">
-              <strong>{declared.label}</strong> is declared, but its
-              requirements aren't modelled in this app — ANU's 2025 page for it
-              couldn't be sourced, so seeding rules would have meant inventing
-              them. Its 24 units are counted in the total but checked against
-              nothing here.
-            </p>
-          )
-        }
-        {
-          !declared && (
-            <p class="warn">
-              No specialisation declared, so 24 of the 96 units have no
-              categories here yet, and Degree Progress can only account for{" "}
-              {96 - unaccounted} units.
-            </p>
-          )
-        }
-      </section>
+      <h2 id="study-plan">My Study Plan</h2>
+      <StudyPlan plan={plan} semesterGroups={semesterGroups} empty={chosen.length === 0} />
 
-      {
-        visibleCategories.map((requirement) => {
-          const foldedFloors = floorsFoldedIntoKey.get(requirement.key) ?? [];
-          // A floor doesn't own a pool to add from — it's a measurement
-          // over whatever the plan's other categories already claimed
-          // ("a minimum of 12 units of 8000-level courses" reads off
-          // whichever courses landed in core/further-computing/electives/
-          // the specialisation's own buckets, not a separate list). Giving
-          // it its own selector is actively misleading once it's scoped to
-          // one specialisation: resolvePool's filter has no way to exclude
-          // courses that belong to a program-level bucket or a DIFFERENT
-          // specialisation, so it would offer, say, a Machine Learning
-          // course under Professional Computing's own 8000-level minimum —
-          // adding it there does nothing for that requirement at all.
-          const isFloor = requirement.kind === "floor";
-          // Once a category already has enough units in the plan, there's
-          // no point still offering the rest of its pool. Foundational's
-          // pool is 12 units of either/or courses for a 6-unit requirement,
-          // so after MATH6005 alone the picker would otherwise keep
-          // dangling COMP6260 as if it still mattered here; it doesn't —
-          // adding it would just be routed to whichever other category can
-          // still use it (or become surplus), not to this one.
-          //
-          // Deliberately NOT requirement.onTrack: for a cap that field means
-          // "not yet over its ceiling", which is true at zero units chosen —
-          // it would hide the picker before the student has picked anything.
-          // countedUnits >= requiredUnits means the same thing as onTrack
-          // for every OTHER kind, and means "at the ceiling" for a cap,
-          // which is the "full" this is actually asking about.
-          const isFull =
-            !isFloor && requirement.countedUnits >= requirement.requiredUnits;
-          const options =
-            isFloor || isFull
-              ? []
-              : availableForRequirement(
-                  requirement,
-                  catalogue,
-                  poolsByKey,
-                  chosenIds,
-                );
-          // Once this box has nothing left to accept — its own pool is full
-          // or exhausted — there's exactly one true thing left to say about
-          // it, not two: either every folded floor is also covered ("done"),
-          // or at least one isn't ("not yet met" — and there's nothing more
-          // to add here that would fix it, so no picker either). Vacuously
-          // true with no folded floors, which is every OTHER category, so
-          // this reduces to the original single-note behaviour for them.
-          const boxClosed = !isFloor && (isFull || options.length === 0);
-          const allFoldedFloorsMet = foldedFloors.every(
-            (floor) => floor.onTrack,
-          );
-          const selectId = `add-${requirement.key}`;
-          const semesterId = `${selectId}-semester`;
-          return (
-            <section aria-labelledby={`cat-${requirement.key}`} class="bucket">
-              <h3 id={`cat-${requirement.key}`}>
-                {requirement.label}
-                {requirement.kind === "cap" && (
-                  <span class="kindtag">maximum — stay under this</span>
-                )}
-              </h3>
-              {/* A floor's full rule text and progress already live in
-                  Degree Progress below — repeating them here, on a category
-                  with no pool of its own to add from, was noise. This is
-                  just the one thing Course Planner needs to say about it:
-                  is it covered yet by what you've picked elsewhere or not. */}
-              {isFloor ? (
-                <p class="note">
-                  {requirement.onTrack
-                    ? "Every course in this category is already in your plan."
-                    : "Not yet met."}
-                </p>
-              ) : (
-                requirement.detail && <p class="rule">{requirement.detail}</p>
-              )}
-              {
-                /* A specialisation's own floor(s) — internal minimums with
-                   no pool of their own — fold straight into this box rather
-                   than getting a disconnected section: just their rule text
-                   here. Whether each is covered folds into the ONE status
-                   line below, once this box has nothing left to add — not
-                   a status line per floor, which could say "not yet met"
-                   right next to this box's own "already in your plan" for
-                   the exact same set of courses. */
-                foldedFloors.map(
-                  (floor) => floor.detail && <p class="rule">{floor.detail}</p>,
-                )
-              }
-              {isFloor ? null : boxClosed ? (
-                <p class="note">
-                  {allFoldedFloorsMet
-                    ? "Every course in this category is already in your plan."
-                    : "Not yet met."}
-                </p>
-              ) : (
-                <form method="post" action="/api/plan-items" class="picker">
-                  <input type="hidden" name="slug" value={plan.slug} />
-                  <label for={selectId}>Add a course</label>
-                  <select id={selectId} name="courseId" required>
-                    {options.map((course) => (
-                      <option value={course.id}>
-                        {course.code} — {course.title} ({course.units}u)
-                      </option>
-                    ))}
-                  </select>
-                  <label for={semesterId}>Semester</label>
-                  <select id={semesterId} name="semester">
-                    <option value="">Not yet scheduled</option>
-                    {semesters.map((semester) => (
-                      <option value={semester}>{semester}</option>
-                    ))}
-                  </select>
-                  <fieldset>
-                    <legend>Status</legend>
-                    <label>
-                      <input
-                        type="radio"
-                        name="status"
-                        value="completed"
-                        checked
-                      />{" "}
-                      Completed
-                    </label>
-                    <label>
-                      <input type="radio" name="status" value="planned" />{" "}
-                      Planned
-                    </label>
-                  </fieldset>
-                  <button>Add</button>
-                </form>
-              )}
-            </section>
-          );
-        })
-      }
-
-      <h2>My Study Plan</h2>
-      {
-        chosen.length === 0 ? (
-          <p>Nothing added yet — pick a course above to start your plan.</p>
-        ) : (
-          semesterGroups.map(({ semester, items }) => (
-            <section
-              aria-labelledby={`sem-${semesterSlug(semester)}`}
-              class="bucket"
-            >
-              <h3 id={`sem-${semesterSlug(semester)}`}>
-                {semesterLabel(semester)}
-              </h3>
-              <ul class="chosen">
-                {items.map(({ course, status }: ChosenItem) => (
-                  <li>
-                    <span class="code">{course.code}</span>
-                    <span class="title">{course.title}</span>
-                    <span class="units">{course.units}u</span>
-                    <span class:list={["status", status]}>{status}</span>
-                    <form method="post" action="/api/plan-items" class="inline">
-                      <input type="hidden" name="slug" value={plan.slug} />
-                      <input type="hidden" name="courseId" value={course.id} />
-                      <input
-                        type="hidden"
-                        name="status"
-                        value={status === "completed" ? "planned" : "completed"}
-                      />
-                      <input
-                        type="hidden"
-                        name="semester"
-                        value={semester ?? ""}
-                      />
-                      <button>
-                        Mark {course.code} as{" "}
-                        {status === "completed" ? "planned" : "completed"}
-                      </button>
-                    </form>
-                    <form method="post" action="/api/plan-items" class="inline">
-                      <input type="hidden" name="slug" value={plan.slug} />
-                      <input type="hidden" name="courseId" value={course.id} />
-                      <input type="hidden" name="action" value="move" />
-                      <label class="sr-only" for={`move-${course.id}`}>
-                        Move {course.code} to semester
-                      </label>
-                      <select id={`move-${course.id}`} name="semester">
-                        <option value="" selected={semester === null}>
-                          Not yet scheduled
-                        </option>
-                        {semesters.map((option) => (
-                          <option value={option} selected={option === semester}>
-                            {option}
-                          </option>
-                        ))}
-                      </select>
-                      <button>Move</button>
-                    </form>
-                    <form method="post" action="/api/plan-items" class="inline">
-                      <input type="hidden" name="slug" value={plan.slug} />
-                      <input type="hidden" name="courseId" value={course.id} />
-                      <input type="hidden" name="action" value="remove" />
-                      <button>Remove {course.code}</button>
-                    </form>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ))
-        )
-      }
-
-      <h2>Degree Progress</h2>
-      {
-        total && (
-          <section
-            aria-labelledby="req-total"
-            class:list={["bucket", { over: total.exceeded }]}
-          >
-            <h3 id="req-total">{total.label}</h3>
-            <p class="bar">
-              <progress
-                id="prog-total"
-                value={Math.min(total.countedUnits, total.requiredUnits)}
-                max={total.requiredUnits}
-                aria-labelledby="req-total"
-              />
-              <span class="figure">
-                {total.countedUnits} of {total.requiredUnits} units
-              </span>
-            </p>
-            {total.exceeded && (
-              <p class="warn">
-                Over-planned by {total.excessUnits} units — the degree is{" "}
-                {total.requiredUnits} units, so something here won't count.
-              </p>
-            )}
-            {total.detail && <p class="rule">{total.detail}</p>}
-          </section>
-        )
-      }
-      {
-        categories.map((requirement) => (
-          <section aria-labelledby={`req-${requirement.key}`} class="bucket">
-            <h3 id={`req-${requirement.key}`}>
-              {requirement.label}
-              {requirement.kind === "floor" && (
-                <span class="kindtag">minimum, not an allocation</span>
-              )}
-              {requirement.kind === "cap" && (
-                <span class="kindtag">maximum — stay under this</span>
-              )}
-              <span
-                class:list={[
-                  "verdict",
-                  verdict(requirement).replaceAll(" ", "-"),
-                ]}
-              >
-                {verdict(requirement)}
-              </span>
-            </h3>
-            <p class="bar">
-              <progress
-                value={Math.min(
-                  requirement.countedUnits,
-                  requirement.requiredUnits,
-                )}
-                max={requirement.requiredUnits}
-                aria-labelledby={`req-${requirement.key}`}
-              />
-              <span class="figure">
-                {requirement.completedUnits} completed
-                {requirement.plannedUnits > 0 && (
-                  <> + {requirement.plannedUnits} planned</>
-                )}{" "}
-                of {requirement.requiredUnits} units
-              </span>
-            </p>
-            {requirement.violated && (
-              <p class="warn">
-                Over this maximum by {requirement.excessUnits} units. The
-                specialisation only allows {requirement.requiredUnits} units
-                from this list, so some of these cannot count toward it.
-              </p>
-            )}
-            {requirement.detail && <p class="rule">{requirement.detail}</p>}
-            {requirement.countedCodes.length > 0 && (
-              <p class="counting">
-                Counting: {requirement.countedCodes.join(", ")}
-              </p>
-            )}
-            {
-              /* The gap between what a rule could accept and what it was
-                 credited is exactly the units a tighter rule claimed first. */
-              requirement.kind === "allocating" &&
-                requirement.poolMatchedUnits > requirement.countedUnits && (
-                  <p class="elsewhere">
-                    {requirement.poolMatchedUnits - requirement.countedUnits}{" "}
-                    more matching units are counting toward another requirement.
-                  </p>
-                )
-            }
-          </section>
-        ))
-      }
-
-      {
-        progress.surplusUnits > 0 && (
-          <section aria-labelledby="surplus" class="bucket">
-            <h3 id="surplus">Not counting anywhere</h3>
-            <p class="figure">
-              {progress.surplusUnits} units: {progress.surplusCodes.join(", ")}
-            </p>
-            <p class="rule">
-              Every requirement these could fill is already full. They still
-              count toward the total and the 8000-level floor.
-            </p>
-          </section>
-        )
-      }
+      <h2 id="degree-progress">Degree Progress</h2>
+      <DegreeProgress progress={progress} />
     </main>
     <script>
       // The form posts and redirects, so the submitting tab re-renders from

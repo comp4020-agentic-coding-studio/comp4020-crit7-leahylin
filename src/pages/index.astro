@@ -1,8 +1,29 @@
 ---
-import { listPlans } from "../lib/db";
+import { canDeletePlan, listPlans, listSpecialisations, planProgress } from "../lib/db";
+import { degreeComplete } from "../lib/progress";
 import "../styles.css";
 
-const plans = listPlans();
+// Each plan's card shows where it stands, so choosing one to open doesn't
+// mean opening each in turn.
+const specialisationLabel = new Map(
+  listSpecialisations().map((s) => [s.id, s.label]),
+);
+const plans = listPlans().map((plan) => {
+  const { progress } = planProgress(plan);
+  const total = progress.requirements.find((r) => r.kind === "total");
+  return {
+    plan,
+    specialisation:
+      plan.specialisationId === null
+        ? undefined
+        : specialisationLabel.get(plan.specialisationId),
+    completed: progress.completedUnits,
+    planned: progress.plannedUnits,
+    counted: total?.countedUnits ?? progress.totalUnits,
+    required: total?.requiredUnits ?? 96,
+    complete: degreeComplete(progress),
+  };
+});
 ---
 
 <!doctype html>
@@ -32,27 +53,64 @@ const plans = listPlans();
         slot as well.
       </p>
 
+      {/* Starting a plan comes first, on one line: it's what a first visit
+          is for, and it shouldn't sit below a long list of plans. */}
+      <h2>Start a plan</h2>
+      <form method="post" action="/api/plans" class="picker new-plan">
+        <div class="field grow">
+          <label for="label">Plan name</label>
+          <input id="label" name="label" required maxlength="80" placeholder="e.g. 2026 full-time" />
+        </div>
+        <button>Create plan</button>
+      </form>
+
       <h2>Your plans</h2>
       {
         plans.length === 0 ? (
           <p>No plans yet — make one below.</p>
         ) : (
           <ul class="plans">
-            {plans.map((plan) => (
-              <li>
+            {plans.map(({ plan, specialisation, completed, planned, counted, required, complete }) => (
+              <li class:list={["plan-card", { complete }]}>
                 <a href={`/plan/${plan.slug}/`}>{plan.label}</a>
+                <span class="plan-spec">
+                  {specialisation ?? "No specialisation declared"}
+                  {complete && <span class="plan-done">Complete</span>}
+                </span>
+                <progress
+                  value={Math.min(counted, required)}
+                  max={required}
+                  aria-label={`${plan.label}: ${counted} of ${required} units`}
+                />
+                <span class="figure">
+                  {counted} of {required} units · {completed} completed ·{" "}
+                  {planned} planned
+                </span>
+                {/* The demo plan has no Delete: it is re-created at every
+                    boot, so deleting it would only bring it back. */}
+                {canDeletePlan(plan.slug) && (
+                  <details class="plan-delete">
+                    <summary>
+                      Delete<span class="sr-only"> {plan.label}</span>
+                    </summary>
+                    <form method="post" action="/api/plan-delete">
+                      <input type="hidden" name="slug" value={plan.slug} />
+                      <p>
+                        Delete “{plan.label}” and every course in it? This can't
+                        be undone.
+                      </p>
+                      <button class="danger">
+                        Delete plan<span class="sr-only"> {plan.label}</span>
+                      </button>
+                    </form>
+                  </details>
+                )}
               </li>
             ))}
           </ul>
         )
       }
 
-      <h2>Start another</h2>
-      <form method="post" action="/api/plans" class="stack">
-        <label for="label">Plan name</label>
-        <input id="label" name="label" required maxlength="80" placeholder="e.g. 2026 full-time" />
-        <button>Create plan</button>
-      </form>
     </main>
   </body>
 </html>

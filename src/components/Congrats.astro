@@ -1,0 +1,89 @@
+---
+// The banner shown once every requirement is met by completed courses,
+// with confetti the first time (per plan, per browser). The page decides
+// whether to render it at all (see degreeComplete in progress.ts).
+interface Props {
+  completedUnits: number;
+}
+const { completedUnits } = Astro.props;
+---
+
+<section class="congrats" aria-labelledby="congrats-heading" data-congrats>
+            <h2 id="congrats-heading">Congratulations!</h2>
+            <p>
+              Every requirement of the Master of Computing is met by courses
+              you've completed: {completedUnits} units, the
+              specialisation and every minimum included. The degree is done.
+            </p>
+          </section>
+
+<script>
+  // Confetti in ANU colours when the degree is complete. Once per plan
+  // (remembered in this browser), so a reload or another tab's update
+  // doesn't set it off again; never when reduced motion is asked for.
+  const congrats = document.querySelector("[data-congrats]");
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const celebratedKey = `celebrated:${document.querySelector("main")?.getAttribute("data-plan")}`;
+  let alreadyCelebrated = false;
+  try {
+    alreadyCelebrated = localStorage.getItem(celebratedKey) === "1";
+  } catch {
+    /* storage unavailable: celebrate anyway */
+  }
+  if (congrats && !reduceMotion && !alreadyCelebrated) {
+    try {
+      localStorage.setItem(celebratedKey, "1");
+    } catch {
+      /* fine: it may just play again next time */
+    }
+    const canvas = document.createElement("canvas");
+    canvas.className = "confetti";
+    canvas.setAttribute("aria-hidden", "true");
+    document.body.append(canvas);
+    const context = canvas.getContext("2d");
+    const resize = () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    };
+    resize();
+    window.addEventListener("resize", resize);
+    const colours = ["#be830e", "#000000", "#f5edde", "#be830e", "#ffffff"];
+    const pieces = Array.from({ length: 160 }, () => ({
+      x: Math.random() * canvas.width,
+      y: -20 - Math.random() * canvas.height * 0.6,
+      size: 6 + Math.random() * 7,
+      fall: 2 + Math.random() * 3,
+      drift: -1.5 + Math.random() * 3,
+      spin: Math.random() * Math.PI,
+      spinSpeed: -0.2 + Math.random() * 0.4,
+      colour: colours[Math.floor(Math.random() * colours.length)],
+    }));
+    const started = performance.now();
+    const frame = (now: number) => {
+      if (!context) return;
+      const elapsed = now - started;
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      // Fade out over the last second of four.
+      context.globalAlpha = Math.max(0, Math.min(1, (4000 - elapsed) / 1000));
+      for (const piece of pieces) {
+        piece.y += piece.fall;
+        piece.x += piece.drift;
+        piece.spin += piece.spinSpeed;
+        context.save();
+        context.translate(piece.x, piece.y);
+        context.rotate(piece.spin);
+        context.fillStyle = piece.colour;
+        context.strokeStyle = "rgba(0, 0, 0, 0.15)";
+        context.fillRect(-piece.size / 2, -piece.size / 4, piece.size, piece.size / 2);
+        context.strokeRect(-piece.size / 2, -piece.size / 4, piece.size, piece.size / 2);
+        context.restore();
+      }
+      if (elapsed < 4000) requestAnimationFrame(frame);
+      else {
+        canvas.remove();
+        window.removeEventListener("resize", resize);
+      }
+    };
+    requestAnimationFrame(frame);
+  }
+</script>

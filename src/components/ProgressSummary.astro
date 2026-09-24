@@ -1,0 +1,42 @@
+---
+// The progress figure that stays in view while the page scrolls (a bar
+// across the top, or a card beside the page on a wide screen), so a change
+// in the planner shows its effect without scrolling to Degree Progress.
+import type { PlanProgress } from "../lib/progress";
+
+interface Props {
+  progress: PlanProgress;
+  graduated: boolean;
+}
+const { progress, graduated } = Astro.props;
+const total = progress.requirements.find((r) => r.kind === "total");
+const summaryRequired = total?.requiredUnits ?? 96;
+const summaryCounted = total?.countedUnits ?? progress.totalUnits;
+const requirementsShown = progress.requirements.filter((r) => r.kind !== "total");
+const requirementsOnTrack = requirementsShown.filter((r) => r.onTrack).length;
+---
+
+<section
+  class:list={["summary", { graduated }]}
+  aria-labelledby="summary-heading"
+>
+  <h2 id="summary-heading">Progress</h2>
+  {graduated && (
+    <p class="summary-congrats">Congratulations! Degree complete</p>
+  )}
+  <p class="summary-figure">
+    <strong>{summaryCounted}</strong> / {summaryRequired} units
+  </p>
+  <progress
+    value={Math.min(summaryCounted, summaryRequired)}
+    max={summaryRequired}
+    aria-labelledby="summary-heading"
+  />
+  <p class="summary-split">
+    {progress.completedUnits} completed · {progress.plannedUnits} planned
+  </p>
+  <p class="summary-reqs">
+    {requirementsOnTrack} of {requirementsShown.length} requirements on track
+  </p>
+  <a href="#degree-progress" class="summary-link">See Degree Progress</a>
+</section>

@@ -1,0 +1,152 @@
+---
+// The ANU Course Planner: the plan's intake, its declared specialisation,
+// then a box per category (or one box per multi-rule specialisation) with
+// what can still be added to it. What each box offers is worked out in
+// src/lib/course-planner.ts; this only lays it out.
+import CategoryBody from "./CategoryBody.astro";
+import { INTAKES } from "../lib/semester";
+import type { PlannerBlock } from "../lib/course-planner";
+import type { Plan, Specialisation } from "../lib/schema";
+
+interface Props {
+  plan: Plan;
+  blocks: PlannerBlock[];
+  specialisations: Specialisation[];
+  /** Whether the declared specialisation's rules are modelled. */
+  specialisationModelled: boolean;
+  /** The plan's semesters, from its intake. */
+  semesters: string[];
+}
+const { plan, blocks, specialisations, specialisationModelled, semesters } = Astro.props;
+const allSpecialisations = specialisations;
+const declared = allSpecialisations.find((s) => s.id === plan.specialisationId);
+const unaccounted = specialisationModelled ? 0 : 24;
+const lastSemester = semesters[semesters.length - 1];
+---
+
+<section aria-labelledby="intake-heading" class="bucket">
+  <h3 id="intake-heading">Intake</h3>
+  <p class="rule">
+    The Master of Computing is normally four semesters full time. The
+    study plan's semesters start from here; changing it moves every
+    scheduled course by the same number of semesters.
+  </p>
+  <form method="post" action="/api/plan-intake" class="picker">
+    <input type="hidden" name="slug" value={plan.slug} />
+    <div class="field grow">
+      <label for="intake">Starting semester</label>
+      <select id="intake" name="intake">
+        {INTAKES.map((intake) => (
+          <option value={intake} selected={intake === plan.intake}>
+            {intake}
+          </option>
+        ))}
+      </select>
+    </div>
+    <button>Set intake</button>
+  </form>
+</section>
+
+<section aria-labelledby="specialisation-heading" class="bucket">
+  <h3 id="specialisation-heading">Specialisation</h3>
+  <p class="rule">
+    One specialisation is a compulsory part of the Master of Computing,
+    worth 24 of its 96 units. Declaring one brings its own categories into
+    this section.
+  </p>
+  <form method="post" action="/api/plan-specialisation" class="picker">
+    <input type="hidden" name="slug" value={plan.slug} />
+    <div class="field grow">
+    <label for="specialisationId">Declared specialisation</label>
+    <select id="specialisationId" name="specialisationId">
+      <option value="">None declared</option>
+      {
+        allSpecialisations.map((specialisation) => (
+          <option
+            value={specialisation.id}
+            selected={specialisation.id === plan.specialisationId}
+          >
+            {specialisation.label}
+            {specialisation.code ? ` (${specialisation.code})` : ""}
+            {specialisation.modelled
+              ? ""
+              : " — requirements not yet modelled"}
+          </option>
+        ))
+      }
+    </select>
+    </div>
+    <button>Declare</button>
+  </form>
+  {
+    declared && !declared.modelled && (
+      <p class="warn">
+        <strong>{declared.label}</strong> is declared, but its
+        requirements aren't modelled in this app — ANU's 2025 page for it
+        couldn't be sourced, so seeding rules would have meant inventing
+        them. Its 24 units are counted in the total but checked against
+        nothing here.
+      </p>
+    )
+  }
+  {
+    !declared && (
+      <p class="warn">
+        No specialisation declared, so 24 of the 96 units have no
+        categories here yet, and Degree Progress can only account for{" "}
+        {96 - unaccounted} units.
+      </p>
+    )
+  }
+</section>
+
+{
+  blocks.map((block) =>
+    block.kind === "single" ? (
+      <section
+        aria-labelledby={`cat-${block.view.requirement.key}`}
+        class:list={["bucket", { settled: block.view.settled }]}
+      >
+        <h3 id={`cat-${block.view.requirement.key}`}>
+          {block.view.requirement.label}
+          {block.view.requirement.kind === "cap" && (
+            <span class="kindtag">maximum — stay under this</span>
+          )}
+        </h3>
+        <CategoryBody
+          view={block.view}
+          slug={plan.slug}
+          semesters={semesters}
+          lastSemester={lastSemester}
+        />
+      </section>
+    ) : (
+      <section
+        aria-labelledby={`spec-${block.key}`}
+        class="bucket spec-group"
+      >
+        <h3 id={`spec-${block.key}`}>{block.title}</h3>
+        {block.rule && <p class="rule">{block.rule}</p>}
+        {block.views.map((view) => (
+          <section
+            aria-labelledby={`cat-${view.requirement.key}`}
+            class:list={["part", { settled: view.settled }]}
+          >
+            <h4 id={`cat-${view.requirement.key}`}>
+              {view.label}
+              {view.requirement.kind === "cap" && (
+                <span class="kindtag">maximum — stay under this</span>
+              )}
+            </h4>
+            <CategoryBody
+              view={view}
+              slug={plan.slug}
+              semesters={semesters}
+              lastSemester={lastSemester}
+            />
+          </section>
+        ))}
+      </section>
+    ),
+  )
+}

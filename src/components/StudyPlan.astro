@@ -1,0 +1,214 @@
+---
+// My Study Plan: every semester of the plan (from its intake), each with
+// its courses, its load, and a warning over the full-time load. Changing a
+// course's semester saves as soon as it's picked (the script below).
+import {
+  FULL_TIME_LOAD,
+  type SemesterGroup,
+  type SemesterRow,
+  semesterUnits,
+  startSemesters,
+  unitsPerSemester,
+} from "../lib/semester";
+import type { Plan } from "../lib/schema";
+
+interface Props {
+  plan: Plan;
+  /** Every semester, empty ones included (see everySemester). */
+  semesterGroups: SemesterGroup[];
+  /** Whether the plan has any course at all. */
+  empty: boolean;
+}
+const { plan, semesterGroups, empty } = Astro.props;
+// The column headings sit over the first semester that has a course in it.
+const firstFilled = semesterGroups.findIndex((group) => group.items.length > 0);
+
+function semesterLabel(semester: string | null): string {
+  return semester ?? "Not yet scheduled";
+}
+
+// aria-labelledby is a space-separated list of ids, so an id built from a
+// label containing spaces ("sem-2026 Semester 1") is silently parsed as
+// three ids, none of which exist, and the section loses its accessible name.
+function semesterSlug(semester: string | null): string {
+  return (semester ?? "none").toLowerCase().replaceAll(/\s+/g, "-");
+}
+---
+
+{
+  empty ? (
+    <p>Nothing added yet — pick a course above to start your plan.</p>
+  ) : (
+    semesterGroups.map(({ semester, items }, index) => {
+      const units = semesterUnits(items);
+      const overload = semester !== null && units > FULL_TIME_LOAD;
+      return (
+      <section
+        aria-labelledby={`sem-${semesterSlug(semester)}`}
+        class:list={["bucket", "semester-group", { empty: items.length === 0, overload }]}
+      >
+        <h3 id={`sem-${semesterSlug(semester)}`}>
+          {semesterLabel(semester)}
+          {items.length > 0 && (
+            <span class="sem-units">{units} units</span>
+          )}
+        </h3>
+        {items.length === 0 && (
+          <p class="note">Nothing planned yet.</p>
+        )}
+        {overload && (
+          <p class="warn">
+            {units} units is more than the standard full-time load of{" "}
+            {FULL_TIME_LOAD}. Taking more needs approval from the
+            university.
+          </p>
+        )}
+        {/* Column headings, once, above the first semester with a
+            course in it. Hidden from screen readers: every control in
+            a row already has its own label, so reading these out would
+            only repeat them. */}
+        {index === firstFilled && (
+          <div class="chosen-head" aria-hidden="true">
+            <span>Course</span>
+            <span>Units</span>
+            <span>Semester</span>
+            <span>Status</span>
+            <span></span>
+            <span></span>
+          </div>
+        )}
+        {items.length > 0 && (
+        <ul class="chosen">
+          {items.map(({ course, status, semester: start, part }: SemesterRow) => part === 2 ? (
+            <li class="continued">
+              {/* The second semester of a two-semester course: shown
+                  so this semester's load is right, but every control
+                  for it lives on its first-semester row. */}
+              <span class="course">
+                <span class="code">{course.code}</span>
+                <span class="title">{course.title}</span>
+                <span class="part">Semester 2 of 2 · continues from {start}</span>
+              </span>
+              <span class="units">{unitsPerSemester(course)}u</span>
+              <span class="semester-text">{semester}</span>
+              <span class:list={["status", status]}>{status}</span>
+              <form method="post" action="/api/plan-items" class="inline">
+                <input type="hidden" name="slug" value={plan.slug} />
+                <input type="hidden" name="courseId" value={course.id} />
+                <input type="hidden" name="action" value="status" />
+                <input type="hidden" name="part" value="2" />
+                <input
+                  type="hidden"
+                  name="status"
+                  value={status === "completed" ? "planned" : "completed"}
+                />
+                <button class="secondary">
+                  Mark <span class="sr-only">{course.code} semester 2 </span>as{" "}
+                  {status === "completed" ? "planned" : "completed"}
+                </button>
+              </form>
+              <span></span>
+            </li>
+          ) : (
+            <li>
+              {/* Columns, left to right: the course, its units, its
+                  semester, its status, then the actions. The course
+                  code is already in the first column, so the buttons
+                  say it only to screen readers, which read each
+                  button on its own. */}
+              <span class="course">
+                <span class="code">{course.code}</span>
+                <span class="title">{course.title}</span>
+                {part === 1 && (
+                  <span class="part">Semester 1 of 2 · continues next semester</span>
+                )}
+              </span>
+              <span class="units">{unitsPerSemester(course)}u</span>
+              <form method="post" action="/api/plan-items" class="inline semester">
+                <input type="hidden" name="slug" value={plan.slug} />
+                <input type="hidden" name="courseId" value={course.id} />
+                <input type="hidden" name="action" value="move" />
+                <label class="sr-only" for={`move-${course.id}`}>
+                  Semester for {course.code}
+                </label>
+                <select
+                  id={`move-${course.id}`}
+                  name="semester"
+                  data-autosubmit
+                >
+                  <option value="" selected={start === null}>
+                    Not yet scheduled
+                  </option>
+                  {startSemesters(course, plan.intake).map((option) => (
+                    <option value={option} selected={option === start}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+                {/* Choosing a semester submits on its own (see the script
+                    below); the button only exists for a browser
+                    running without JavaScript. */}
+                <noscript>
+                  <button class="secondary">Move</button>
+                </noscript>
+              </form>
+              <span class:list={["status", status]}>{status}</span>
+              <form method="post" action="/api/plan-items" class="inline">
+                <input type="hidden" name="slug" value={plan.slug} />
+                <input type="hidden" name="courseId" value={course.id} />
+                <input
+                  type="hidden"
+                  name="status"
+                  value={status === "completed" ? "planned" : "completed"}
+                />
+                <input
+                  type="hidden"
+                  name="semester"
+                  value={start ?? ""}
+                />
+                {/* The first semester of a two-semester course is
+                    marked on its own, leaving the second as it is. */}
+                {part === 1 && (
+                  <>
+                    <input type="hidden" name="action" value="status" />
+                    <input type="hidden" name="part" value="1" />
+                  </>
+                )}
+                <button class="secondary">
+                  Mark{" "}
+                  <span class="sr-only">
+                    {course.code} {part === 1 ? "semester 1 " : ""}
+                  </span>
+                  as{" "}
+                  {status === "completed" ? "planned" : "completed"}
+                </button>
+              </form>
+              <form method="post" action="/api/plan-items" class="inline">
+                <input type="hidden" name="slug" value={plan.slug} />
+                <input type="hidden" name="courseId" value={course.id} />
+                <input type="hidden" name="action" value="remove" />
+                <button class="quiet">
+                  Remove<span class="sr-only"> {course.code}</span>
+                </button>
+              </form>
+            </li>
+          ))}
+        </ul>
+        )}
+      </section>
+      );
+    })
+  )
+}
+
+
+
+<script>
+  // Picking a semester in My Study Plan saves it straight away, so no
+  // separate Move button is needed.
+  for (const select of document.querySelectorAll<HTMLSelectElement>(
+    "select[data-autosubmit]",
+  )) {
+    select.addEventListener("change", () => select.form?.requestSubmit());
+  }
+</script>

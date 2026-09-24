@@ -33,8 +33,8 @@ function between(html: string, start: string, end: string): string {
 /** The one semester group whose heading id is `sem-${slug}` — anchored on
  *  the id rather than the display text, since "Not yet scheduled" and every
  *  semester label also appear inside every row's own "move to…" <select>.
- *  A semester with nothing filed under it renders no section at all, which
- *  is not an error — it's what "0 rows in that group" looks like. */
+ *  Every semester renders a section, empty or not; "Not yet scheduled" only
+ *  does when something is in it, and is undefined here otherwise. */
 function semesterGroup(studyPlan: string, slug: string): string | undefined {
   if (!studyPlan.includes(`id="sem-${slug}"`)) return undefined;
   return between(studyPlan, `id="sem-${slug}"`, "</section>");
@@ -42,7 +42,7 @@ function semesterGroup(studyPlan: string, slug: string): string | undefined {
 
 /** How many rows actually carry this course code — the code appears in a
  *  `<span class="code">`, but also in every row's own button/label text
- *  ("Mark X as completed", "Remove X", "Move X to semester"), so counting
+ *  ("Mark X as completed", "Remove X", "Semester for X"), so counting
  *  raw substring occurrences overcounts a single row by 4x. */
 function rowsFor(html: string | undefined, code: string): number {
   if (html === undefined) return 0;
@@ -50,7 +50,9 @@ function rowsFor(html: string | undefined, code: string): number {
 }
 
 function courseIdFor(html: string, code: string): string {
-  const match = new RegExp(`<option value="(\\d+)">${code}\\b`).exec(html);
+  // Other attributes may follow the value (COMP8715's option is marked as a
+  // two-semester course), so match up to the tag's end, not a bare ">".
+  const match = new RegExp(`<option value="(\\d+)"[^>]*>\\s*${code}\\b`).exec(html);
   if (!match) throw new Error(`no catalogue option for ${code}`);
   return match[1];
 }
@@ -78,7 +80,7 @@ describe("the study plan groups by semester", () => {
     // Refetch, the spec's explicit persistence-through-reload requirement,
     // now exercised for the new semester field specifically.
     const after = await planHtml(slug);
-    const studyPlan = between(after, "<h2>My Study Plan", "<h2>Degree Progress");
+    const studyPlan = between(after, "My Study Plan</h2>", "Degree Progress</h2>");
     expect(rowsFor(semesterGroup(studyPlan, "2026-semester-1"), "COMP6250")).toBe(1);
     expect(rowsFor(semesterGroup(studyPlan, "none"), "COMP6250")).toBe(0);
   });
@@ -101,7 +103,7 @@ describe("the study plan groups by semester", () => {
     );
 
     const after = await planHtml(slug);
-    const studyPlan = between(after, "<h2>My Study Plan", "<h2>Degree Progress");
+    const studyPlan = between(after, "My Study Plan</h2>", "Degree Progress</h2>");
     const newGroup = semesterGroup(studyPlan, "2025-semester-1");
     expect(rowsFor(newGroup, "COMP6442")).toBe(1);
     expect(rowsFor(semesterGroup(studyPlan, "2026-semester-2"), "COMP6442")).toBe(0);
@@ -131,7 +133,7 @@ describe("the study plan groups by semester", () => {
     );
 
     const after = await planHtml(slug);
-    const studyPlan = between(after, "<h2>My Study Plan", "<h2>Degree Progress");
+    const studyPlan = between(after, "My Study Plan</h2>", "Degree Progress</h2>");
     expect(rowsFor(semesterGroup(studyPlan, "2025-semester-2"), "MATH6005")).toBe(1);
     expect(rowsFor(semesterGroup(studyPlan, "2026-semester-1"), "MATH6005")).toBe(0);
     // Exactly one row for this course anywhere in the whole study plan —
@@ -146,7 +148,7 @@ describe("the study plan groups by semester", () => {
     await post("/api/plan-items", new URLSearchParams({ slug, courseId, status: "completed" }));
 
     const after = await planHtml(slug);
-    const studyPlan = between(after, "<h2>My Study Plan", "<h2>Degree Progress");
+    const studyPlan = between(after, "My Study Plan</h2>", "Degree Progress</h2>");
     expect(rowsFor(semesterGroup(studyPlan, "none"), "COMP6710")).toBe(1);
   });
 
@@ -157,7 +159,7 @@ describe("the study plan groups by semester", () => {
     // compulsory-core category should move Degree Progress's core figure
     // exactly as adding the same course any other way would.
     const before = await planHtml(slug);
-    const planner = between(before, "<h2>ANU Course Planner", "<h2>My Study Plan");
+    const planner = between(before, "ANU Course Planner</h2>", "My Study Plan</h2>");
     const coreForm = between(planner, 'id="cat-mcomp-core"', "</form>");
     const courseId = courseIdFor(coreForm, "COMP8260");
 
@@ -167,7 +169,7 @@ describe("the study plan groups by semester", () => {
     );
 
     const after = await planHtml(slug);
-    const progress = between(after, "<h2>Degree Progress", "");
+    const progress = between(after, "Degree Progress</h2>", "");
     const coreSection = between(progress, 'id="req-mcomp-core"', "</section>");
     expect(coreSection).toContain("COMP8260");
   });
@@ -196,11 +198,15 @@ describe("floor categories in the Course Planner have no picker of their own", (
     await post("/api/plan-specialisation", new URLSearchParams({ slug, specialisationId: pcomId }));
   });
 
-  it("gives the degree-wide 8000-level floor no add-selector", async () => {
+  it("leaves the degree-wide 8000-level floor out of the Course Planner, but keeps it in Degree Progress", async () => {
+    // It has nothing to add from, so the planner has nothing to say about
+    // it that Degree Progress doesn't already say better.
     const html = await planHtml(slug);
-    const planner = between(html, "<h2>ANU Course Planner", "<h2>My Study Plan");
-    const category = between(planner, 'id="cat-mcomp-min-8000-comp"', "</section>");
-    expect(category).not.toContain('class="picker"');
+    const planner = between(html, "ANU Course Planner</h2>", "My Study Plan</h2>");
+    expect(planner).not.toContain('id="cat-mcomp-min-8000-comp"');
+    expect(planner).not.toContain("8000-level COMP minimum");
+    const progress = between(html, "Degree Progress</h2>", "");
+    expect(progress).toContain("8000-level COMP minimum");
   });
 
   it("gives Professional Computing's own 8000-level floor no section of its own at all", async () => {
@@ -214,7 +220,7 @@ describe("floor categories in the Course Planner have no picker of their own", (
 
   it("still gives every allocating and cap category its selector", async () => {
     const html = await planHtml(slug);
-    const planner = between(html, "<h2>ANU Course Planner", "<h2>My Study Plan");
+    const planner = between(html, "ANU Course Planner</h2>", "My Study Plan</h2>");
     for (const key of ["mcomp-core", "pcom-core", "pcom-elective", "pcom-8000-comp"]) {
       const category = between(planner, `id="cat-${key}"`, "</section>");
       expect(category, key).toContain('class="picker"');
@@ -241,7 +247,7 @@ describe("a specialisation floor folds into its umbrella bucket", () => {
 
   it("shows both the umbrella's and the folded floor's rule text, with no separate floor section, and no status line while there's still room to add", async () => {
     const html = await planHtml(slug);
-    const planner = between(html, "<h2>ANU Course Planner", "<h2>My Study Plan");
+    const planner = between(html, "ANU Course Planner</h2>", "My Study Plan</h2>");
     expect(planner).not.toContain('id="cat-mchl-min-8000"');
 
     const box = between(planner, 'id="cat-mchl-courses"', "</section>");
@@ -268,7 +274,7 @@ describe("a specialisation floor folds into its umbrella bucket", () => {
     }
 
     const after = await planHtml(slug);
-    const planner = between(after, "<h2>ANU Course Planner", "<h2>My Study Plan");
+    const planner = between(after, "ANU Course Planner</h2>", "My Study Plan</h2>");
     const box = between(planner, 'id="cat-mchl-courses"', "</section>");
     expect(box).not.toContain('class="picker"');
     const noteCount = box.split('<p class="note">').length - 1;
@@ -311,13 +317,195 @@ describe("a specialisation floor folds into its umbrella bucket", () => {
     }
 
     const after = await planHtml(freshSlug);
-    const planner = between(after, "<h2>ANU Course Planner", "<h2>My Study Plan");
+    const planner = between(after, "ANU Course Planner</h2>", "My Study Plan</h2>");
     const box = between(planner, 'id="cat-mchl-courses"', "</section>");
     expect(box).not.toContain('class="picker"');
     const noteCount = box.split('<p class="note">').length - 1;
     expect(noteCount).toBe(1);
     expect(box).toContain("Not yet met.");
     expect(box).not.toContain("Every course in this category is already in your plan.");
+  });
+});
+
+describe("a specialisation's 8000-level minimum limits what its picker offers", () => {
+  // Machine Learning: 24 units from a list, at least 12 of them 8000-level.
+  // So at most 12 units — two 6-unit courses — can be below 8000 level.
+  async function freshMchlPlan(): Promise<string> {
+    const res = await post(
+      "/api/plans",
+      new URLSearchParams({ label: `headroom probe ${process.hrtime.bigint()}` }),
+    );
+    const location = res.headers.get("location");
+    if (!location) throw new Error("plan creation did not redirect");
+    const slug = location.replace(/^\/plan\//, "").replace(/\/$/, "");
+    const html = await planHtml(slug);
+    const mchlId = new RegExp('<option value="(\\d+)"[^>]*>\\s*Machine Learning').exec(html)?.[1];
+    if (!mchlId) throw new Error("Machine Learning not found in the specialisation list");
+    await post("/api/plan-specialisation", new URLSearchParams({ slug, specialisationId: mchlId }));
+    return slug;
+  }
+
+  async function add(slug: string, codes: string[]): Promise<void> {
+    for (const code of codes) {
+      const courseId = courseIdFor(await planHtml(slug), code);
+      await post("/api/plan-items", new URLSearchParams({ slug, courseId, status: "planned" }));
+    }
+  }
+
+  async function mchlBox(slug: string): Promise<string> {
+    const html = await planHtml(slug);
+    const planner = between(html, "ANU Course Planner</h2>", "My Study Plan</h2>");
+    return between(planner, 'id="cat-mchl-courses"', "</section>");
+  }
+
+  it("still offers courses below 8000 level after one of them", async () => {
+    const slug = await freshMchlPlan();
+    await add(slug, ["COMP6261"]);
+    const box = await mchlBox(slug);
+    expect(box).toContain("COMP6490 —");
+    expect(box).toContain("COMP8600 —");
+    expect(box).not.toContain('class="limit"');
+  });
+
+  it("doesn't count 8000-level courses against that limit: after two of them, both below-8000 slots are still open", async () => {
+    const slug = await freshMchlPlan();
+    await add(slug, ["COMP8600", "COMP8650"]);
+    const box = await mchlBox(slug);
+    expect(box).toContain("COMP6261 —");
+    expect(box).toContain("COMP6490 —");
+    expect(box).not.toContain('class="limit"');
+  });
+
+  it("offers only 8000-level courses once two below 8000 level are in, and says why", async () => {
+    const slug = await freshMchlPlan();
+    await add(slug, ["COMP6261", "COMP6490"]);
+    const box = await mchlBox(slug);
+    // The two remaining courses below 8000 level are gone...
+    expect(box).not.toContain("COMP6528 —");
+    expect(box).not.toContain("COMP6670 —");
+    // ...every 8000-level one is still there...
+    for (const code of ["COMP8600", "COMP8650", "COMP8880"]) {
+      expect(box, code).toContain(`${code} —`);
+    }
+    // ...and the box says why.
+    expect(box).toContain('class="limit"');
+    expect(box).toContain("12 units of this specialisation are already");
+  });
+});
+
+describe("COMP8715 runs over two consecutive semesters; COMP8830 over one", () => {
+  async function freshPlan(): Promise<string> {
+    const res = await post(
+      "/api/plans",
+      new URLSearchParams({ label: `project probe ${process.hrtime.bigint()}` }),
+    );
+    const location = res.headers.get("location");
+    if (!location) throw new Error("plan creation did not redirect");
+    return location.replace(/^\/plan\//, "").replace(/\/$/, "");
+  }
+
+  async function addAt(slug: string, code: string, semester: string): Promise<void> {
+    const courseId = courseIdFor(await planHtml(slug), code);
+    await post("/api/plan-items", new URLSearchParams({ slug, courseId, status: "planned", semester }));
+  }
+
+  function studyPlanOf(html: string): string {
+    return between(html, "My Study Plan</h2>", "Degree Progress</h2>");
+  }
+
+  it("shows COMP8715 in its start semester and the next, still counting 12 units once", async () => {
+    const slug = await freshPlan();
+    await addAt(slug, "COMP8715", "2025 Semester 2");
+    const html = await planHtml(slug);
+    const plan = studyPlanOf(html);
+    expect(rowsFor(semesterGroup(plan, "2025-semester-2"), "COMP8715")).toBe(1);
+    expect(rowsFor(semesterGroup(plan, "2026-semester-1"), "COMP8715")).toBe(1);
+    expect(semesterGroup(plan, "2025-semester-2")).toContain("Semester 1 of 2");
+    expect(semesterGroup(plan, "2026-semester-1")).toContain("Semester 2 of 2");
+    // 6 units in each of the two semesters, not 12 in both.
+    expect(semesterGroup(plan, "2025-semester-2")).toContain('<span class="units">6u</span>');
+    expect(semesterGroup(plan, "2026-semester-1")).toContain('<span class="units">6u</span>');
+    // The audit is unchanged: one 12-unit project, counted once.
+    const progress = between(html, "Degree Progress</h2>", "");
+    const project = between(progress, 'id="req-mcomp-project"', "</section>");
+    expect(project).toContain("12 planned of 12 units");
+  });
+
+  it("marks each semester of COMP8715 completed on its own", async () => {
+    const slug = await freshPlan();
+    await addAt(slug, "COMP8715", "2025 Semester 1");
+    const html = await planHtml(slug);
+    const moveId = /id="move-(\d+)"/.exec(studyPlanOf(html))?.[1];
+    if (!moveId) throw new Error("no move select for COMP8715");
+    const mark = (part: string, status: string) =>
+      post(
+        "/api/plan-items",
+        new URLSearchParams({ slug, courseId: moveId, action: "status", part, status }),
+      );
+    const statusIn = (plan: string, sem: string) =>
+      /class="status (completed|planned)"/.exec(semesterGroup(plan, sem) ?? "")?.[1];
+    const projectFigure = (page: string) =>
+      between(between(page, 'id="req-mcomp-project"', "</section>"), 'class="figure"', "</span>");
+
+    // First semester done: only the first semester shows completed, and the
+    // audit has 6 completed + 6 planned, not 12 completed.
+    await mark("1", "completed");
+    let page = await planHtml(slug);
+    expect(statusIn(studyPlanOf(page), "2025-semester-1")).toBe("completed");
+    expect(statusIn(studyPlanOf(page), "2025-semester-2")).toBe("planned");
+    expect(projectFigure(page)).toContain("6 completed");
+    expect(projectFigure(page)).toContain("6 planned");
+
+    // Second semester done too: both completed, 12 completed.
+    await mark("2", "completed");
+    page = await planHtml(slug);
+    expect(statusIn(studyPlanOf(page), "2025-semester-2")).toBe("completed");
+    expect(projectFigure(page)).toContain("12 completed");
+    expect(projectFigure(page)).not.toContain("planned");
+
+    // Undoing the first leaves the second completed.
+    await mark("1", "planned");
+    page = await planHtml(slug);
+    expect(statusIn(studyPlanOf(page), "2025-semester-1")).toBe("planned");
+    expect(statusIn(studyPlanOf(page), "2025-semester-2")).toBe("completed");
+  });
+
+  it("keeps COMP8830 in a single semester", async () => {
+    const slug = await freshPlan();
+    await addAt(slug, "COMP8830", "2025 Semester 2");
+    const plan = studyPlanOf(await planHtml(slug));
+    expect(rowsFor(semesterGroup(plan, "2025-semester-2"), "COMP8830")).toBe(1);
+    expect(rowsFor(semesterGroup(plan, "2026-semester-1"), "COMP8830")).toBe(0);
+  });
+
+  it("refuses to start COMP8715 in the last semester, whether adding or moving it", async () => {
+    const slug = await freshPlan();
+    await addAt(slug, "COMP8715", "2026 Semester 2");
+    expect(studyPlanOf(await planHtml(slug))).not.toContain('<span class="code">COMP8715</span>');
+
+    await addAt(slug, "COMP8715", "2026 Semester 1");
+    const html = await planHtml(slug);
+    const moveId = /id="move-(\d+)"/.exec(studyPlanOf(html))?.[1];
+    if (!moveId) throw new Error("no move select for COMP8715");
+    await post(
+      "/api/plan-items",
+      new URLSearchParams({ slug, courseId: moveId, action: "move", semester: "2026 Semester 2" }),
+    );
+    const plan = studyPlanOf(await planHtml(slug));
+    expect(rowsFor(semesterGroup(plan, "2026-semester-1"), "COMP8715")).toBe(1);
+    expect(rowsFor(semesterGroup(plan, "2026-semester-2"), "COMP8715")).toBe(1);
+    expect(semesterGroup(plan, "2026-semester-1")).toContain("Semester 1 of 2");
+    // And its own semester list never offers the last one to start in.
+    const move = between(plan, `id="move-${moveId}"`, "</select>");
+    expect(move).not.toContain("2026 Semester 2");
+    expect(move).toContain("2026 Semester 1");
+  });
+
+  it("still lets a one-semester course go in the last semester", async () => {
+    const slug = await freshPlan();
+    await addAt(slug, "COMP8830", "2026 Semester 2");
+    const plan = studyPlanOf(await planHtml(slug));
+    expect(rowsFor(semesterGroup(plan, "2026-semester-2"), "COMP8830")).toBe(1);
   });
 });
 
@@ -343,7 +531,7 @@ describe("an allocating or cap category hides its picker once full", () => {
     await post("/api/plan-items", new URLSearchParams({ slug, courseId, status: "completed" }));
 
     const after = await planHtml(slug);
-    const planner = between(after, "<h2>ANU Course Planner", "<h2>My Study Plan");
+    const planner = between(after, "ANU Course Planner</h2>", "My Study Plan</h2>");
     const category = between(planner, 'id="cat-mcomp-foundational"', "</section>");
     expect(category).not.toContain('class="picker"');
     expect(category).toContain("already in your plan");
@@ -363,7 +551,7 @@ describe("an allocating or cap category hides its picker once full", () => {
     await post("/api/plan-specialisation", new URLSearchParams({ slug, specialisationId: cmsyId }));
 
     const after = await planHtml(slug);
-    const planner = between(after, "<h2>ANU Course Planner", "<h2>My Study Plan");
+    const planner = between(after, "ANU Course Planner</h2>", "My Study Plan</h2>");
     const category = between(planner, 'id="cat-cmsy-foundation"', "</section>");
     expect(category).toContain('class="picker"');
   });
@@ -378,9 +566,258 @@ describe("an allocating or cap category hides its picker once full", () => {
     void before;
 
     const after = await planHtml(slug);
-    const planner = between(after, "<h2>ANU Course Planner", "<h2>My Study Plan");
+    const planner = between(after, "ANU Course Planner</h2>", "My Study Plan</h2>");
     const category = between(planner, 'id="cat-cmsy-foundation"', "</section>");
     expect(category).not.toContain('class="picker"');
     expect(category).toContain("already in your plan");
+  });
+});
+
+describe("a completed degree is congratulated", () => {
+  const FULL = [
+    "COMP6250", "COMP6442", "COMP6710", "COMP8260", "MATH6005", "COMP8715",
+    "COMP8600", "COMP8620", "COMP8650", "COMP8410", "COMP8430",
+    "COMP6120", "ENGN8100", "COMP6240", "COMP6331",
+  ];
+
+  async function pcomPlan(): Promise<{ slug: string; ids: Map<string, string> }> {
+    const res = await post(
+      "/api/plans",
+      new URLSearchParams({ label: `graduation probe ${process.hrtime.bigint()}` }),
+    );
+    const location = res.headers.get("location");
+    if (!location) throw new Error("plan creation did not redirect");
+    const slug = location.replace(/^\/plan\//, "").replace(/\/$/, "");
+    const start = await planHtml(slug);
+    const pcomId = new RegExp('<option value="(\\d+)"[^>]*>\\s*Professional Computing').exec(start)?.[1];
+    if (!pcomId) throw new Error("Professional Computing not found");
+    await post("/api/plan-specialisation", new URLSearchParams({ slug, specialisationId: pcomId }));
+    // Every course is still on offer before anything is added, so look the
+    // ids up once, up front.
+    const page = await planHtml(slug);
+    return { slug, ids: new Map(FULL.map((code) => [code, courseIdFor(page, code)])) };
+  }
+
+  it("shows the congratulations once every course is completed", async () => {
+    const { slug, ids } = await pcomPlan();
+    for (const code of FULL) {
+      await post("/api/plan-items", new URLSearchParams({ slug, courseId: ids.get(code) ?? "", status: "completed" }));
+    }
+    const html = await planHtml(slug);
+    expect(html).toContain('class="congrats"');
+    expect(html).toContain("Congratulations!");
+  });
+
+  it("doesn't while one course is still only planned", async () => {
+    const { slug, ids } = await pcomPlan();
+    for (const code of FULL) {
+      const status = code === "COMP8600" ? "planned" : "completed";
+      await post("/api/plan-items", new URLSearchParams({ slug, courseId: ids.get(code) ?? "", status }));
+    }
+    const html = await planHtml(slug);
+    expect(html).not.toContain('class="congrats"');
+  });
+});
+
+describe("deleting a plan", () => {
+  it("removes the plan and its courses, and takes it off the home page", async () => {
+    const label = `delete probe ${process.hrtime.bigint()}`;
+    const res = await post("/api/plans", new URLSearchParams({ label }));
+    const location = res.headers.get("location");
+    if (!location) throw new Error("plan creation did not redirect");
+    const slug = location.replace(/^\/plan\//, "").replace(/\/$/, "");
+    const courseId = courseIdFor(await planHtml(slug), "COMP6250");
+    await post("/api/plan-items", new URLSearchParams({ slug, courseId, status: "completed" }));
+
+    const home = await (await fetch(new URL("/", baseUrl))).text();
+    expect(home).toContain(label);
+    expect(home).toContain(`<input type="hidden" name="slug" value="${slug}"`);
+
+    const deleted = await post("/api/plan-delete", new URLSearchParams({ slug }));
+    expect(deleted.status).toBe(303);
+    expect(deleted.headers.get("location")).toBe("/");
+
+    const after = await (await fetch(new URL("/", baseUrl))).text();
+    expect(after).not.toContain(label);
+    expect((await fetch(new URL(`/plan/${slug}/`, baseUrl))).status).toBe(404);
+  });
+
+  it("won't delete the demo plan, and doesn't offer to", async () => {
+    await post("/api/plan-delete", new URLSearchParams({ slug: "demo" }));
+    expect((await fetch(new URL("/plan/demo/", baseUrl))).status).toBe(200);
+    const home = await (await fetch(new URL("/", baseUrl))).text();
+    expect(home).not.toContain('<input type="hidden" name="slug" value="demo"');
+  });
+});
+
+describe("each semester shows its load, and empty ones still show", () => {
+  it("lists every semester, totals each, and flags one over the full-time load", async () => {
+    const res = await post(
+      "/api/plans",
+      new URLSearchParams({ label: `load probe ${process.hrtime.bigint()}` }),
+    );
+    const location = res.headers.get("location");
+    if (!location) throw new Error("plan creation did not redirect");
+    const slug = location.replace(/^\/plan\//, "").replace(/\/$/, "");
+    // Five 6-unit courses in one semester is 30 units: over the 24 of a
+    // full-time load. COMP8715 starting a semester later adds 6 to each of
+    // the next two.
+    const page = await planHtml(slug);
+    for (const code of ["COMP6250", "COMP6442", "COMP6710", "COMP8260", "MATH6005"]) {
+      await post("/api/plan-items", new URLSearchParams({
+        slug, courseId: courseIdFor(page, code), status: "planned", semester: "2025 Semester 1",
+      }));
+    }
+    await post("/api/plan-items", new URLSearchParams({
+      slug, courseId: courseIdFor(page, "COMP8715"), status: "planned", semester: "2025 Semester 2",
+    }));
+
+    const html = await planHtml(slug);
+    const plan = between(html, "My Study Plan</h2>", "Degree Progress</h2>");
+    const first = semesterGroup(plan, "2025-semester-1") ?? "";
+    expect(first).toContain('<span class="sem-units">30 units</span>');
+    expect(first).toContain("more than the standard full-time load of 24");
+    const second = semesterGroup(plan, "2025-semester-2") ?? "";
+    expect(second).toContain('<span class="sem-units">6 units</span>');
+    expect(second).not.toContain("full-time load");
+    expect(semesterGroup(plan, "2026-semester-1")).toContain('<span class="sem-units">6 units</span>');
+    // The rest are there, empty, saying so.
+    // The one left, 2026 Semester 2, is there, empty, saying so; nothing
+    // beyond the four semesters is.
+    expect(semesterGroup(plan, "2026-semester-2")).toContain("Nothing planned yet.");
+    expect(semesterGroup(plan, "2027-semester-1")).toBeUndefined();
+    // Nothing unscheduled, so no "Not yet scheduled" group.
+    expect(semesterGroup(plan, "none")).toBeUndefined();
+  });
+});
+
+describe("choosing the intake", () => {
+  const studyPlanOf = (html: string) => between(html, "My Study Plan</h2>", "Degree Progress</h2>");
+  it("moves the study plan with it, keeps unscheduled courses unscheduled, and moves back", async () => {
+    const res = await post(
+      "/api/plans",
+      new URLSearchParams({ label: `intake probe ${process.hrtime.bigint()}` }),
+    );
+    const location = res.headers.get("location");
+    if (!location) throw new Error("plan creation did not redirect");
+    const slug = location.replace(/^\/plan\//, "").replace(/\/$/, "");
+    const page = await planHtml(slug);
+    const add = (code: string, semester: string) =>
+      post("/api/plan-items", new URLSearchParams({
+        slug, courseId: courseIdFor(page, code), status: "planned", semester,
+      }));
+    await add("COMP6250", "2025 Semester 1");
+    await add("COMP8715", "2026 Semester 1"); // runs into 2026 Semester 2
+    await add("COMP6442", "");
+
+    const studyPlan = async () => between(await planHtml(slug), "My Study Plan</h2>", "Degree Progress</h2>");
+    const setIntake = (intake: string) =>
+      post("/api/plan-intake", new URLSearchParams({ slug, intake }));
+
+    await setIntake("2025 Semester 2");
+    let plan = await studyPlan();
+    // Every scheduled course one semester later...
+    expect(rowsFor(semesterGroup(plan, "2025-semester-2"), "COMP6250")).toBe(1);
+    expect(rowsFor(semesterGroup(plan, "2026-semester-2"), "COMP8715")).toBe(1);
+    expect(rowsFor(semesterGroup(plan, "2027-semester-1"), "COMP8715")).toBe(1);
+    // ...the unscheduled one still unscheduled...
+    expect(rowsFor(semesterGroup(plan, "none"), "COMP6442")).toBe(1);
+    // ...and the plan's four semesters now run 2025 S2 to 2027 S1.
+    expect(semesterGroup(plan, "2025-semester-1")).toBeUndefined();
+    expect(semesterGroup(plan, "2026-semester-1")).toContain("Nothing planned yet.");
+    expect(semesterGroup(plan, "2027-semester-2")).toBeUndefined();
+    const html = await planHtml(slug);
+    expect(html).toContain("starts 2025 Semester 2");
+
+    // A semester outside the new span is refused: the course isn't added
+    // at all (the Course Planner still offers it, which it wouldn't if it
+    // were in the plan anywhere).
+    await post("/api/plan-items", new URLSearchParams({
+      slug, courseId: courseIdFor(page, "COMP6710"), status: "planned", semester: "2025 Semester 1",
+    }));
+    const afterRefusal = await planHtml(slug);
+    expect(studyPlanOf(afterRefusal)).not.toContain('<span class="code">COMP6710</span>');
+    expect(between(afterRefusal, "ANU Course Planner</h2>", "My Study Plan</h2>")).toContain("COMP6710 —");
+
+    // An unknown intake changes nothing.
+    await setIntake("2031 Semester 1");
+    expect(await planHtml(slug)).toContain("starts 2025 Semester 2");
+
+    await setIntake("2025 Semester 1");
+    plan = await studyPlan();
+    expect(rowsFor(semesterGroup(plan, "2025-semester-1"), "COMP6250")).toBe(1);
+    expect(rowsFor(semesterGroup(plan, "2026-semester-1"), "COMP8715")).toBe(1);
+    expect(semesterGroup(plan, "2027-semester-1")).toBeUndefined();
+  });
+});
+
+describe("a specialisation with several rules gets one box, a dropdown per part", () => {
+  async function declared(name: string): Promise<string> {
+    const res = await post(
+      "/api/plans",
+      new URLSearchParams({ label: `group probe ${process.hrtime.bigint()}` }),
+    );
+    const location = res.headers.get("location");
+    if (!location) throw new Error("plan creation did not redirect");
+    const slug = location.replace(/^\/plan\//, "").replace(/\/$/, "");
+    const start = await planHtml(slug);
+    const id = new RegExp(`<option value="(\\d+)"[^>]*>\\s*${name}`).exec(start)?.[1];
+    if (!id) throw new Error(`${name} not found`);
+    await post("/api/plan-specialisation", new URLSearchParams({ slug, specialisationId: id }));
+    const html = await planHtml(slug);
+    return between(html, "ANU Course Planner</h2>", "My Study Plan</h2>");
+  }
+  const offers = (part: string, code: string) => part.includes(`${code} —`);
+  const groups = (planner: string) => planner.split('class="bucket spec-group"').length - 1;
+
+  it("puts Computer Systems in one box: the advanced list and the foundation maximum, each course offered once", async () => {
+    const planner = await declared("Computer Systems");
+    expect(groups(planner)).toBe(1);
+    const group = between(planner, 'class="bucket spec-group"', 'id="cat-mcomp-further-computing"');
+    expect(group).toContain("Specialisation: Computer Systems");
+    const advanced = between(group, 'id="cat-cmsy-courses"', "</section>");
+    const foundation = between(group, 'id="cat-cmsy-foundation"', "</section>");
+    expect(advanced).toContain("Advanced systems minimum");
+    // The whole box's rule sits once at the top, not inside the first part.
+    const head = between(group, "Specialisation: Computer Systems", 'id="cat-cmsy-courses"');
+    expect(head).toContain("24 units drawn from the two lists below.");
+    expect(advanced).not.toContain("24 units drawn from the two lists below.");
+    expect(advanced).toContain("A minimum of 12 units from completion of courses from the following list.");
+    for (const code of ["COMP8300", "COMP8045", "COMP8712"]) {
+      expect(offers(advanced, code), code).toBe(true);
+      expect(offers(foundation, code), code).toBe(false);
+    }
+    for (const code of ["COMP6310", "COMP6330", "COMP6331", "COMP6361", "COMP6464", "ENGN6213"]) {
+      expect(offers(foundation, code), code).toBe(true);
+      expect(offers(advanced, code), code).toBe(false);
+    }
+  });
+
+  it("names Human-Centred's first part after the two minimums it is made of", async () => {
+    const planner = await declared("Human-Centred");
+    const first = between(planner, 'id="cat-hccm-courses"', "</section>");
+    expect(first).toContain("Compulsory course and advanced minimum");
+    expect(offers(first, "COMP6390")).toBe(true);
+    expect(offers(first, "COMP6528")).toBe(false);
+  });
+
+  it("puts Professional Computing's three rules in one box", async () => {
+    const planner = await declared("Professional Computing");
+    expect(groups(planner)).toBe(1);
+    for (const key of ["pcom-core", "pcom-elective", "pcom-8000-comp"]) {
+      expect(planner).toContain(`<h4 id="cat-${key}"`);
+    }
+    // The 8000-level minimum is about all 24 units, so it heads the box
+    // rather than sitting inside the compulsory part.
+    const group = between(planner, 'class="bucket spec-group"', 'id="cat-pcom-core"');
+    expect(group).toContain("must consist of a minimum of 12 units of 8000 level courses");
+    const core = between(planner, 'id="cat-pcom-core"', "</section>");
+    expect(core).not.toContain("8000 level courses");
+  });
+
+  it("leaves a one-rule specialisation (Machine Learning) in its own ordinary box", async () => {
+    const planner = await declared("Machine Learning");
+    expect(groups(planner)).toBe(0);
+    expect(planner).toContain('<h3 id="cat-mchl-courses"');
   });
 });
