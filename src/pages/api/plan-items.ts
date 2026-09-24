@@ -1,5 +1,13 @@
 import type { APIRoute } from "astro";
-import { addToPlan, getPlan, moveToSemester, removeFromPlan } from "../../lib/db";
+import {
+  addToPlan,
+  canStartIn,
+  getCourse,
+  getPlan,
+  moveToSemester,
+  removeFromPlan,
+  setPartStatus,
+} from "../../lib/db";
 import { publishPlanUpdate } from "../../lib/events";
 
 // Add a course to a plan, move it between completed and planned, or drop it.
@@ -17,11 +25,25 @@ export const POST: APIRoute = async ({ request, redirect }) => {
   const rawSemester = form.get("semester");
   const semester = rawSemester ? String(rawSemester) : null;
 
+  // Only the plan's own semesters (which follow from its intake), and a
+  // two-semester course (COMP8715) can't start in the last of them: there'd
+  // be no following semester to finish it in. The page never offers either;
+  // this refuses them from anywhere else, leaving the plan as it was.
+  const course = Number.isInteger(courseId) ? getCourse(courseId) : undefined;
+  if (action !== "remove" && course && !canStartIn(course, semester, plan.intake)) {
+    return redirect(`/plan/${plan.slug}/`, 303);
+  }
+
   if (Number.isInteger(courseId) && courseId > 0) {
     if (action === "remove") {
       removeFromPlan(plan.id, courseId);
     } else if (action === "move") {
       moveToSemester(plan.id, courseId, semester);
+    } else if (action === "status") {
+      // One semester of a two-semester course (COMP8715): each half is
+      // marked completed on its own.
+      const status = form.get("status") === "completed" ? "completed" : "planned";
+      setPartStatus(plan.id, courseId, form.get("part") === "2" ? 2 : 1, status);
     } else {
       const status = form.get("status") === "completed" ? "completed" : "planned";
       addToPlan(plan.id, courseId, status, semester);
