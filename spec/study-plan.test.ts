@@ -172,3 +172,51 @@ describe("the study plan groups by semester", () => {
     expect(coreSection).toContain("COMP8260");
   });
 });
+
+describe("floor categories in the Course Planner have no picker of their own", () => {
+  let slug: string;
+
+  beforeAll(async () => {
+    const res = await post(
+      "/api/plans",
+      new URLSearchParams({ label: `floor probe ${process.hrtime.bigint()}` }),
+    );
+    const location = res.headers.get("location");
+    if (!location) throw new Error("plan creation did not redirect");
+    slug = location.replace(/^\/plan\//, "").replace(/\/$/, "");
+    // Professional Computing's pcom-min-8000 is a floor, scoped to the
+    // specialisation — resolvePool has no way to keep its bare 8000-8999
+    // level filter from also matching courses that belong to a program-level
+    // bucket or a different specialisation, so it must not get its own
+    // add-selector at all (see spec/progress.test.ts's cmsy-min-8000-style
+    // scoping tests for the engine side of this).
+    const html = await planHtml(slug);
+    const pcomId = new RegExp('<option value="(\\d+)"[^>]*>\\s*Professional Computing').exec(html)?.[1];
+    if (!pcomId) throw new Error("Professional Computing not found in the specialisation list");
+    await post("/api/plan-specialisation", new URLSearchParams({ slug, specialisationId: pcomId }));
+  });
+
+  it("gives the degree-wide 8000-level floor no add-selector", async () => {
+    const html = await planHtml(slug);
+    const planner = between(html, "<h2>ANU Course Planner", "<h2>My Study Plan");
+    const category = between(planner, 'id="cat-mcomp-min-8000-comp"', "</section>");
+    expect(category).not.toContain('class="picker"');
+  });
+
+  it("gives the specialisation's own 8000-level floor no add-selector either", async () => {
+    const html = await planHtml(slug);
+    const planner = between(html, "<h2>ANU Course Planner", "<h2>My Study Plan");
+    const category = between(planner, 'id="cat-pcom-min-8000"', "</section>");
+    expect(category).not.toContain('class="picker"');
+    expect(category).toContain("Counted automatically");
+  });
+
+  it("still gives every allocating and cap category its selector", async () => {
+    const html = await planHtml(slug);
+    const planner = between(html, "<h2>ANU Course Planner", "<h2>My Study Plan");
+    for (const key of ["mcomp-core", "pcom-core", "pcom-elective", "pcom-8000-comp"]) {
+      const category = between(planner, `id="cat-${key}"`, "</section>");
+      expect(category, key).toContain('class="picker"');
+    }
+  });
+});

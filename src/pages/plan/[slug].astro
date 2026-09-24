@@ -134,12 +134,21 @@ function semesterSlug(semester: string | null): string {
 
       {
         categories.map((requirement) => {
-          const options = availableForRequirement(
-            requirement,
-            catalogue,
-            poolsByKey,
-            chosenIds,
-          );
+          // A floor doesn't own a pool to add from — it's a measurement
+          // over whatever the plan's other categories already claimed
+          // ("a minimum of 12 units of 8000-level courses" reads off
+          // whichever courses landed in core/further-computing/electives/
+          // the specialisation's own buckets, not a separate list). Giving
+          // it its own selector is actively misleading once it's scoped to
+          // one specialisation: resolvePool's filter has no way to exclude
+          // courses that belong to a program-level bucket or a DIFFERENT
+          // specialisation, so it would offer, say, a Machine Learning
+          // course under Professional Computing's own 8000-level minimum —
+          // adding it there does nothing for that requirement at all.
+          const isFloor = requirement.kind === "floor";
+          const options = isFloor
+            ? []
+            : availableForRequirement(requirement, catalogue, poolsByKey, chosenIds);
           const selectId = `add-${requirement.key}`;
           const semesterId = `${selectId}-semester`;
           return (
@@ -154,7 +163,13 @@ function semesterSlug(semester: string | null): string {
                 )}
               </h3>
               {requirement.detail && <p class="rule">{requirement.detail}</p>}
-              {options.length === 0 ? (
+              {isFloor ? (
+                <p class="note">
+                  Counted automatically from the courses you've already added to
+                  other categories above — there's no separate list to add from
+                  here.
+                </p>
+              ) : options.length === 0 ? (
                 <p class="note">Every course in this category is already in your plan.</p>
               ) : (
                 <form method="post" action="/api/plan-items" class="picker">
