@@ -1,5 +1,5 @@
 import type { APIRoute } from "astro";
-import { createPlan } from "../../lib/db";
+import { createPlan, setIntake } from "../../lib/db";
 
 // A plain HTML form POSTs here and gets a 303 back, so creating a plan works
 // with no client-side JavaScript at all.
@@ -14,5 +14,10 @@ export const POST: APIRoute = async ({ request, redirect }) => {
   if (!label) return redirect("/", 303);
 
   const plan = createPlan(label.slice(0, 80));
+  // The starting semester can be chosen up front, the same way the plan
+  // page sets it later. Anything unrecognised is ignored and the plan
+  // starts 2025 Semester 1. The form's degree field has one option
+  // (7706XMCOMP, the only degree modelled), so there's nothing to read.
+  setIntake(plan.id, String(form.get("intake") ?? ""));
   return redirect(`/plan/${plan.slug}/`, 303);
 };

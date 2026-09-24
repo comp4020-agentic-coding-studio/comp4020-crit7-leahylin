@@ -521,14 +521,29 @@ button {
   font-weight: 600;
 }
 
-.new-plan input {
+/* The plan name box, both dropdowns and the button share one height and
+   one border, so the form reads as a single set of controls. */
+.new-plan input,
+.new-plan select,
+.new-plan button {
+  box-sizing: border-box;
+  height: 2.3rem;
+}
+
+.new-plan input,
+.new-plan select {
   width: 100%;
-  padding: 0.45rem 0.6rem;
+  padding: 0.4rem 0.5rem;
   font: inherit;
+  font-size: 0.95rem;
+  line-height: normal;
+  border: 1px solid rgb(118, 118, 118);
+  border-radius: 0;
+  background: var(--anu-white);
 }
 
 .new-plan {
-  max-width: 40rem;
+  max-width: 48rem;
 }
 
 .plan-done {
@@ -930,6 +945,7 @@ main > .summary h2 {
   outline-offset: 2px;
 }
 
+.plan-meta,
 .plan-spec {
   font-size: 0.9rem;
   color: var(--dim);

@@ -540,6 +540,9 @@ export const TWO_SEMESTER_COURSES: ReadonlySet<string> = new Set(["COMP8715"]);
 export const DEMO_PLAN = {
   slug: "demo",
   label: "Demo plan",
+  // The Master of Computing is the only degree modelled; the demo starts
+  // in the first of its two 2025 intakes.
+  intake: "2025 Semester 1",
 };
 
 /** ANU course codes are four letters then four digits, so both the subject

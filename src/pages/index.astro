@@ -6,6 +6,7 @@ import {
   planProgress,
 } from "../lib/db";
 import { degreeComplete } from "../lib/progress";
+import { INTAKES } from "../lib/semester";
 import "../styles.css";
 
 // Each plan's card shows where it stands, so choosing one to open doesn't
@@ -64,7 +65,25 @@ const plans = listPlans().map((plan) => {
           is for, and it shouldn't sit below a long list of plans. */
       }
       <h2>Start a plan</h2>
+      {
+        /* Degree and starting semester are dropdowns so more can be added
+          later, but for now they hold only what's modelled: the 2025
+          Master of Computing, starting in either 2025 semester. The
+          starting semester can still be changed on the plan page. */
+      }
       <form method="post" action="/api/plans" class="picker new-plan">
+        <div class="field grow">
+          <label for="new-degree">Degree</label>
+          <select id="new-degree" name="degree">
+            <option value="7706XMCOMP">Master of Computing (7706XMCOMP)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="new-intake">Starting semester</label>
+          <select id="new-intake" name="intake">
+            {INTAKES.map((intake) => <option value={intake}>{intake}</option>)}
+          </select>
+        </div>
         <div class="field grow">
           <label for="label">Plan name</label>
           <input
@@ -72,7 +91,7 @@ const plans = listPlans().map((plan) => {
             name="label"
             required
             maxlength="80"
-            placeholder="e.g. 2025 Master of Computing"
+            placeholder="e.g. My MCOMP plan"
           />
         </div>
         <button>Create plan</button>
@@ -96,6 +115,9 @@ const plans = listPlans().map((plan) => {
               }) => (
                 <li class:list={["plan-card", { complete }]}>
                   <a href={`/plan/${plan.slug}/`}>{plan.label}</a>
+                  <span class="plan-meta">
+                    Master of Computing (7706XMCOMP) · starts {plan.intake}
+                  </span>
                   <span class="plan-spec">
                     {specialisation ?? "No specialisation declared"}
                     {complete && <span class="plan-done">Complete</span>}

@@ -828,6 +828,43 @@ describe("choosing the intake", () => {
   });
 });
 
+describe("starting a plan with its degree and starting semester", () => {
+  const create = async (fields: Record<string, string>) => {
+    const res = await post("/api/plans", new URLSearchParams({ label: `start probe ${process.hrtime.bigint()}`, ...fields }));
+    const location = res.headers.get("location");
+    if (!location) throw new Error("plan creation did not redirect");
+    return planHtml(location.replace(/^\/plan\//, "").replace(/\/$/, ""));
+  };
+
+  it("offers only what's modelled: the Master of Computing, starting in 2025", async () => {
+    const home = await (await fetch(new URL("/", baseUrl))).text();
+    const form = between(home, 'action="/api/plans"', "</form>");
+    const options = (name: string) =>
+      [...between(form, `name="${name}"`, "</select>").matchAll(/<option value="([^"]*)"/g)].map((m) => m[1]);
+    expect(options("degree")).toEqual(["7706XMCOMP"]);
+    expect(options("intake")).toEqual(["2025 Semester 1", "2025 Semester 2"]);
+    expect(form).not.toContain('name="specialisationId"');
+  });
+
+  it("creates the plan starting in the semester chosen", async () => {
+    expect(await create({ intake: "2025 Semester 2" })).toContain("starts 2025 Semester 2");
+  });
+
+  it("falls back to 2025 Semester 1 for a semester it doesn't know", async () => {
+    expect(await create({ intake: "2031 Semester 1" })).toContain("starts 2025 Semester 1");
+  });
+
+  it("shows each plan's degree and starting semester on its card under Your plans", async () => {
+    const label = `card probe ${process.hrtime.bigint()}`;
+    await post("/api/plans", new URLSearchParams({ label, intake: "2025 Semester 2" }));
+    const home = await (await fetch(new URL("/", baseUrl))).text();
+    const card = (name: string) => between(home, `>${name}</a>`, "</li>");
+    const meta = (name: string) => /class="plan-meta"[^>]*>\s*([^<]*?)\s*</.exec(card(name))?.[1];
+    expect(meta("Demo plan")).toBe("Master of Computing (7706XMCOMP) · starts 2025 Semester 1");
+    expect(meta(label)).toBe("Master of Computing (7706XMCOMP) · starts 2025 Semester 2");
+  });
+});
+
 describe("a specialisation with several rules gets one box, a dropdown per part", () => {
   async function declared(name: string): Promise<string> {
     const res = await post(
