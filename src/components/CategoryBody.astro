@@ -15,6 +15,7 @@ interface Props {
 
 const { view, slug, semesters, lastSemester } = Astro.props;
 const {
+  full,
   settled,
   ruleText,
   boxClosed,
@@ -45,9 +46,16 @@ function unitsLabel(course: { code: string; units: number }): string {
 }
 {boxClosed ? (
   <p class="note">
-    {allFoldedFloorsMet
-      ? "Every course in this category is already in your plan."
-      : "Not yet met."}
+    {/* Why there's nothing to add: it has what it needs (for a ceiling:
+        it's at it), a minimum inside it still isn't met, or every course
+        it could take is already in the plan and counting elsewhere. */}
+    {!allFoldedFloorsMet
+      ? "Not yet met."
+      : full
+        ? view.requirement.kind === "cap"
+          ? `At its maximum of ${view.requirement.requiredUnits} units.`
+          : "Full — this category has all the units it needs."
+        : "Nothing left to add — every course it can take is already in your plan."}
   </p>
 ) : (
   <>
@@ -94,18 +102,15 @@ function unitsLabel(course: { code: string; units: number }): string {
     <fieldset class="field">
       <legend>Status</legend>
       <div class="choices">
+        {/* Planned first and by default: most of what a student adds is
+            what they intend to take, not what they've already finished. */}
         <label>
-          <input
-            type="radio"
-            name="status"
-            value="completed"
-            checked
-          />{" "}
-          Completed
+          <input type="radio" name="status" value="planned" checked />{" "}
+          Planned
         </label>
         <label>
-          <input type="radio" name="status" value="planned" />{" "}
-          Planned
+          <input type="radio" name="status" value="completed" />{" "}
+          Completed
         </label>
       </div>
     </fieldset>

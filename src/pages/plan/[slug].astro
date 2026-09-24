@@ -29,7 +29,7 @@ if (!plan) {
   return new Response("No such plan", { status: 404 });
 }
 
-const { progress, chosen, poolsByKey, specialisationIdByKey, levelFloorKeys } =
+const { progress, chosen, poolsByKey, specialisationIdByKey, levelFloorKeys, listKeys } =
   planProgress(plan);
 const specialisations = listSpecialisations();
 
@@ -46,6 +46,7 @@ const blocks = plannerBlocks({
   poolsByKey,
   specialisationIdByKey,
   levelFloorKeys,
+  listKeys,
   specialisationLabel: (id) => specialisations.find((s) => s.id === id)?.label,
 });
 

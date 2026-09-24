@@ -31,10 +31,12 @@ export type CategoryView = {
   headroom: Headroom<Course>;
   /** What can still be added here. */
   options: Course[];
+  /** Enough units already (for a ceiling: at it). */
+  full: boolean;
   /** Nothing left to add: full, or nothing left in its pool. */
   boxClosed: boolean;
   allFoldedFloorsMet: boolean;
-  /** Closed with its minimums met: shown as one line. */
+  /** Full with its minimums met: shown as one line. */
   settled: boolean;
   ruleText: string;
   selectId: string;
@@ -65,6 +67,10 @@ export type PlannerInput = {
   poolsByKey: Map<string, Set<number>>;
   specialisationIdByKey: Map<string, number | null>;
   levelFloorKeys: Set<string>;
+  /** Requirements whose pool is a named list of courses (compulsory core,
+   *  the project courses, a specialisation's lists) rather than a filter
+   *  ("any 6000-8000 COMP or ENGN") or everything (electives). */
+  listKeys: Set<string>;
   specialisationLabel: (id: number) => string | undefined;
 };
 
@@ -94,6 +100,7 @@ export function plannerBlocks(input: PlannerInput): PlannerBlock[] {
     poolsByKey,
     specialisationIdByKey,
     levelFloorKeys,
+    listKeys,
     specialisationLabel,
   } = input;
   const progress = { requirements: input.requirements };
@@ -141,6 +148,12 @@ export function plannerBlocks(input: PlannerInput): PlannerBlock[] {
     // for every OTHER kind, and means "at the ceiling" for a cap,
     // which is the "full" this is actually asking about.
     const isFull = requirement.countedUnits >= requirement.requiredUnits;
+    // A broad category (a filter, or every course) leaves a course to the
+    // named list still offering it: COMP6250 belongs under compulsory core,
+    // not also under further computing, where adding it would only count
+    // toward core anyway. Once that list is full, what's left of it is
+    // offered here again — then it really would count here.
+    const isList = listKeys.has(requirement.key);
     const inPool = isFull
       ? []
       : availableForRequirement(
@@ -148,7 +161,9 @@ export function plannerBlocks(input: PlannerInput): PlannerBlock[] {
           catalogue,
           poolsByKey,
           chosenIds,
-        ).filter((course) => !hidden.has(course.id));
+        ).filter(
+          (course) => !hidden.has(course.id) && (isList || !offeredByLists.has(course.id)),
+        );
     // A specialisation's 8000-level minimum caps how much of it can be
     // below 8000 level (24 - 12 = 12 units, i.e. two 6-unit courses).
     // Once that is used up, stop offering courses that would take the
@@ -196,7 +211,10 @@ export function plannerBlocks(input: PlannerInput): PlannerBlock[] {
     // Nothing left to do here: a closed box whose floors are met. It
     // collapses to a single line so the categories that still need
     // something stand out.
-    const settled = boxClosed && allFoldedFloorsMet;
+    // Settled means done: full with its minimums met. A box closed only
+    // because everything it could take is already in the plan (credited
+    // elsewhere) isn't done, and doesn't get the tick.
+    const settled = isFull && allFoldedFloorsMet;
     const ruleText = [requirement.detail, ...foldedFloors.map((f) => f.detail)]
       .filter(Boolean)
       .join(" ");
@@ -207,6 +225,7 @@ export function plannerBlocks(input: PlannerInput): PlannerBlock[] {
       foldedFloors,
       headroom,
       options,
+      full: isFull,
       boxClosed,
       allFoldedFloorsMet,
       settled,
@@ -215,6 +234,15 @@ export function plannerBlocks(input: PlannerInput): PlannerBlock[] {
       semesterId,
     };
   }
+
+  // What the named lists are offering right now, so the broad categories
+  // can leave those courses to them (see categoryView).
+  let offeredByLists: Set<number> = noCourses;
+  offeredByLists = new Set(
+    plannerCategories
+      .filter((requirement) => listKeys.has(requirement.key))
+      .flatMap((requirement) => categoryView(requirement).options.map((course) => course.id)),
+  );
 
   const blocks: PlannerBlock[] = [];
   {

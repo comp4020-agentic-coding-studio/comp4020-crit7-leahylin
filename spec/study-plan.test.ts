@@ -258,7 +258,7 @@ describe("a specialisation floor folds into its umbrella bucket", () => {
     // note to show until this box actually closes (see the two tests below).
     expect(box).toContain('class="picker"');
     expect(box).not.toContain("Not yet met.");
-    expect(box).not.toContain("Every course in this category is already in your plan.");
+    expect(box).not.toContain("Full — this category has all the units it needs.");
   });
 
   it("shows exactly one note — the satisfied one — once both the umbrella and its folded floor are covered", async () => {
@@ -266,7 +266,7 @@ describe("a specialisation floor folds into its umbrella bucket", () => {
     // COMP8600 and COMP8650, are 8000-level, clearing mchl-min-8000 (12u) at
     // the same time — so both the umbrella and the folded floor finish
     // together, which is exactly the case that used to print the same
-    // "already in your plan" sentence twice.
+    // "it's full" sentence twice.
     for (const code of ["COMP6261", "COMP6490", "COMP8600", "COMP8650"]) {
       const page = await planHtml(slug);
       const courseId = courseIdFor(page, code);
@@ -279,7 +279,7 @@ describe("a specialisation floor folds into its umbrella bucket", () => {
     expect(box).not.toContain('class="picker"');
     const noteCount = box.split('<p class="note">').length - 1;
     expect(noteCount).toBe(1);
-    expect(box).toContain("Every course in this category is already in your plan.");
+    expect(box).toContain("Full — this category has all the units it needs.");
   });
 
   it("shows exactly one note — 'Not yet met.' — when the umbrella is full but its folded floor isn't", async () => {
@@ -323,7 +323,7 @@ describe("a specialisation floor folds into its umbrella bucket", () => {
     const noteCount = box.split('<p class="note">').length - 1;
     expect(noteCount).toBe(1);
     expect(box).toContain("Not yet met.");
-    expect(box).not.toContain("Every course in this category is already in your plan.");
+    expect(box).not.toContain("Full — this category has all the units it needs.");
   });
 });
 
@@ -590,7 +590,7 @@ describe("an allocating or cap category hides its picker once full", () => {
     const planner = between(after, "ANU Course Planner</h2>", "My Study Plan</h2>");
     const category = between(planner, 'id="cat-mcomp-foundational"', "</section>");
     expect(category).not.toContain('class="picker"');
-    expect(category).toContain("already in your plan");
+    expect(category).toContain("Full — this category has all the units it needs.");
     // The picker is gone, but COMP6260 must still be choosable elsewhere —
     // this is about foundational specifically, not about removing the
     // course from the catalogue.
@@ -625,7 +625,7 @@ describe("an allocating or cap category hides its picker once full", () => {
     const planner = between(after, "ANU Course Planner</h2>", "My Study Plan</h2>");
     const category = between(planner, 'id="cat-cmsy-foundation"', "</section>");
     expect(category).not.toContain('class="picker"');
-    expect(category).toContain("already in your plan");
+    expect(category).toContain("At its maximum of 12 units.");
   });
 });
 
@@ -952,5 +952,72 @@ describe("Degree Progress leads with completed units, requirements folded", () =
     const capOpen = between(progress, 'aria-labelledby="req-cmsy-foundation verdict-cmsy-foundation"', 'id="req-cmsy-foundation"');
     expect(capOpen).toContain("<details open");
     expect(between(progress, 'id="req-cmsy-foundation"', "</section>")).toContain("Over this maximum by 6 units");
+  });
+});
+
+describe("a broad category leaves a course to the named list still offering it", () => {
+  async function fresh(): Promise<string> {
+    const res = await post(
+      "/api/plans",
+      new URLSearchParams({ label: `dedup probe ${process.hrtime.bigint()}` }),
+    );
+    const location = res.headers.get("location");
+    if (!location) throw new Error("plan creation did not redirect");
+    return location.replace(/^\/plan\//, "").replace(/\/$/, "");
+  }
+  const planner = async (slug: string) =>
+    between(await planHtml(slug), "ANU Course Planner</h2>", "My Study Plan</h2>");
+  const box = (p: string, key: string) => between(p, `id="cat-${key}"`, "</section>");
+  const offers = (part: string, code: string) => part.includes(`${code} —`);
+
+  it("offers core, foundational and project courses only under their own category", async () => {
+    const p = await planner(await fresh());
+    for (const key of ["mcomp-further-computing", "mcomp-electives"]) {
+      const broad = box(p, key);
+      for (const code of ["COMP6250", "COMP6442", "COMP6710", "COMP8260", "COMP6260", "MATH6005", "COMP8715", "COMP8830"]) {
+        expect(offers(broad, code), `${key} ${code}`).toBe(false);
+      }
+    }
+    expect(offers(box(p, "mcomp-core"), "COMP6250")).toBe(true);
+    expect(offers(box(p, "mcomp-project"), "COMP8715")).toBe(true);
+    // A course no named list offers is still under the broad ones.
+    expect(offers(box(p, "mcomp-further-computing"), "COMP8600")).toBe(true);
+    expect(offers(box(p, "mcomp-electives"), "COMP8600")).toBe(true);
+  });
+
+  it("offers the rest of a list under the broad categories once that list is full", async () => {
+    const slug = await fresh();
+    const courseId = courseIdFor(await planHtml(slug), "MATH6005");
+    await post("/api/plan-items", new URLSearchParams({ slug, courseId, status: "completed" }));
+    // Foundational is full with MATH6005, so COMP6260 could now only count
+    // as further computing (or an elective) — and that's where it's offered.
+    const p = await planner(slug);
+    expect(offers(box(p, "mcomp-further-computing"), "COMP6260")).toBe(true);
+  });
+
+  it("keeps Professional Computing's further 8000-level COMP from offering compulsory core's COMP8260", async () => {
+    const slug = await fresh();
+    const start = await planHtml(slug);
+    const id = /<option value="(\d+)"[^>]*>\s*Professional Computing/.exec(start)?.[1];
+    if (!id) throw new Error("Professional Computing not found");
+    await post("/api/plan-specialisation", new URLSearchParams({ slug, specialisationId: id }));
+    const p = await planner(slug);
+    const further8000 = box(p, "pcom-8000-comp");
+    expect(offers(further8000, "COMP8260")).toBe(false);
+    expect(offers(further8000, "COMP8600")).toBe(true);
+  });
+
+  it("says a list is full, not that every course in it was chosen", async () => {
+    // Data Science's elective needs one 6-unit course from six.
+    const slug = await fresh();
+    const start = await planHtml(slug);
+    const id = /<option value="(\d+)"[^>]*>\s*Data Science/.exec(start)?.[1];
+    if (!id) throw new Error("Data Science not found");
+    await post("/api/plan-specialisation", new URLSearchParams({ slug, specialisationId: id }));
+    const courseId = courseIdFor(await planHtml(slug), "COMP8600");
+    await post("/api/plan-items", new URLSearchParams({ slug, courseId, status: "planned" }));
+    const elective = box(await planner(slug), "dtsc-elective");
+    expect(elective).toContain("Full — this category has all the units it needs.");
+    expect(elective).not.toContain("Every course");
   });
 });

@@ -232,6 +232,8 @@ export function planProgress(plan: Plan): {
    *  courses"), by key. RequirementProgress doesn't carry the level filter,
    *  so a page that treats these minimums specially looks them up here. */
   levelFloorKeys: Set<string>;
+  /** Requirements whose pool is a named list of courses, by key. */
+  listKeys: Set<string>;
 } {
   const catalogue = listCourses();
   const byId = new Map(catalogue.map((course) => [course.id, course]));
@@ -293,7 +295,17 @@ export function planProgress(plan: Plan): {
       .map((requirement) => requirement.key),
   );
 
-  return { progress, chosen, poolsByKey, specialisationIdByKey, levelFloorKeys };
+  // Requirements whose pool is a named list of courses, not a filter.
+  const listRequirementIds = new Set(
+    poolRows.filter((row) => row.role === "include").map((row) => row.requirementId),
+  );
+  const listKeys = new Set(
+    allRequirements
+      .filter((requirement) => listRequirementIds.has(requirement.id))
+      .map((requirement) => requirement.key),
+  );
+
+  return { progress, chosen, poolsByKey, specialisationIdByKey, levelFloorKeys, listKeys };
 }
 
 export { availableForRequirement } from "./course-planner";
