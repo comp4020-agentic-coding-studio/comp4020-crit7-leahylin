@@ -11,6 +11,12 @@ import {
   resolvePool,
 } from "./progress";
 import {
+  type ChosenItem,
+  type SemesterGroup,
+  semesterOptions,
+  studyPlanBySemester,
+} from "./semester";
+import {
   type Course,
   type Plan,
   type Specialisation,
@@ -121,30 +127,14 @@ export function moveToSemester(planId: number, courseId: number, semester: strin
     .run();
 }
 
+export { semesterOptions, studyPlanBySemester };
+export type { ChosenItem, SemesterGroup };
+
 export function removeFromPlan(planId: number, courseId: number): void {
   db.delete(planItems)
     .where(and(eq(planItems.planId, planId), eq(planItems.courseId, courseId)))
     .run();
 }
-
-/** The semester labels a student can file a course under: the current year
- *  through three years ahead, two semesters each. Generated rather than
- *  stored, so the list quietly rolls forward every year with no migration
- *  and no seed row to keep in sync. */
-export function semesterOptions(now: Date = new Date()): string[] {
-  const startYear = now.getFullYear();
-  const options: string[] = [];
-  for (let year = startYear; year <= startYear + 3; year += 1) {
-    options.push(`${year} Semester 1`, `${year} Semester 2`);
-  }
-  return options;
-}
-
-export type ChosenItem = {
-  course: Course;
-  status: "completed" | "planned";
-  semester: string | null;
-};
 
 /** Everything a plan page renders: the plan, its courses, and the verdict. */
 export function planProgress(plan: Plan): {
@@ -201,26 +191,4 @@ export function availableForRequirement(
     .sort((a, b) => a.code.localeCompare(b.code));
 }
 
-export type SemesterGroup = { semester: string | null; items: ChosenItem[] };
 
-/** The study plan, grouped by semester — "Not yet scheduled" last, everything
- *  else in the chronological order the generated dropdown produces, which a
- *  plain string sort already gets right ("2026 Semester 1" < "2026 Semester
- *  2" < "2027 Semester 1"). */
-export function studyPlanBySemester(chosen: ChosenItem[]): SemesterGroup[] {
-  const groups = new Map<string | null, ChosenItem[]>();
-  for (const item of chosen) {
-    const key = item.semester;
-    const bucket = groups.get(key);
-    if (bucket) bucket.push(item);
-    else groups.set(key, [item]);
-  }
-
-  const scheduled = [...groups.entries()]
-    .filter((entry): entry is [string, ChosenItem[]] => entry[0] !== null)
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([semester, items]) => ({ semester, items }));
-
-  const unscheduled = groups.get(null);
-  return unscheduled ? [...scheduled, { semester: null, items: unscheduled }] : scheduled;
-}
