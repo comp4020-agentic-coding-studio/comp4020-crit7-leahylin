@@ -60,6 +60,40 @@ export const COURSES: SeedCourse[] = [
   // An excluded project course: it exists so the Professional Computing
   // exclusion rule has something real to reject in migration 0002.
   { code: "COMP8800", title: "Advanced Computing Research Project", units: 12 },
+  // --- named by the six further specialisations ------------------------
+  // All 6 units. Where a page did not state a unit value the arithmetic
+  // settles it: Artificial Intelligence is four courses totalling 24 units,
+  // Data Science's three compulsory courses total 18, and every "choose 6
+  // units from this list" is only answerable if each option is 6.
+  { code: "COMP6261", title: "Information Theory", units: 6 },
+  { code: "COMP6262", title: "Logic", units: 6 },
+  { code: "COMP6310", title: "Systems Networks and Concurrency", units: 6 },
+  { code: "COMP6320", title: "Artificial Intelligence", units: 6 },
+  { code: "COMP6330", title: "Operating Systems", units: 6 },
+  { code: "COMP6361", title: "Principles of Programming Languages", units: 6 },
+  { code: "COMP6363", title: "Theory of Computation", units: 6 },
+  { code: "COMP6464", title: "High Performance Scientific Computing", units: 6 },
+  { code: "COMP6466", title: "Algorithms", units: 6 },
+  { code: "COMP6490", title: "Document Analysis", units: 6 },
+  { code: "COMP6528", title: "Computer Vision", units: 6 },
+  { code: "COMP6540", title: "Game Development", units: 6 },
+  { code: "COMP6670", title: "Introduction to Machine Learning", units: 6 },
+  { code: "COMP6720", title: "Art and Interaction Computing", units: 6 },
+  { code: "COMP6780", title: "Web Programming and Design", units: 6 },
+  { code: "COMP8011", title: "Advanced Topics in Formal Methods and Programming Languages", units: 6 },
+  { code: "COMP8045", title: "Advanced Topics in Computer Systems & Architecture", units: 6 },
+  { code: "COMP8300", title: "Parallel Systems", units: 6 },
+  { code: "COMP8350", title: "Sound and Music Computing", units: 6 },
+  { code: "COMP8460", title: "Advanced Algorithms", units: 6 },
+  { code: "COMP8539", title: "Advanced Topics in Computer Vision", units: 6 },
+  { code: "COMP8610", title: "Computer Graphics", units: 6 },
+  { code: "COMP8691", title: "Optimisation", units: 6 },
+  { code: "COMP8712", title: "Compiler Construction", units: 6 },
+  { code: "COMP8880", title: "Computational Methods for Network Science", units: 6 },
+  { code: "ENGN6213", title: "Digital Systems and Microprocessors", units: 6 },
+  { code: "MATH6114", title: "Number Theory and Cryptography", units: 6 },
+  { code: "MATH8343", title: "Foundations of Mathematics", units: 6 },
+  { code: "STAT6039", title: "Principles of Mathematical Statistics", units: 6 },
 ];
 
 
@@ -72,29 +106,28 @@ export type SeedSpecialisation = {
   modelled: boolean;
 };
 
-// All seven specialisations MCOMP offers; one is compulsory.
+// All seven specialisations MCOMP offers; one is compulsory. Every one is
+// modelled, from its own 2025 page — the codes below are the ones the MCOMP
+// page links to, which is how they were found: guessing slugs had failed.
 //
-// Only Professional Computing is modelled. Its 2025 page confirmed the rules
-// verbatim. The other six could not be sourced: their 2025 specialisation
-// pages do not resolve under any slug tried (AINT-SPEC, aint-spec, arti-spec,
-// mlea-spec all 404), and the only Artificial Intelligence course list I
-// found is from the 2015 catalogue — too stale to seed as if it were current.
-//
-// They are still declarable, with `modelled: false`, so the app can say "not
-// yet modelled" rather than show an empty panel that reads like zero
-// progress. Adding one later is seed data only; no schema change.
+// Their shapes differ more than the program's rules do. Artificial
+// Intelligence is four named courses. Machine Learning is any 24 units from
+// one list. Data Science has a compulsory core plus an elective. Computer
+// Systems, Computational Foundations and Human-Centred each pair a MINIMUM
+// from one list with a MAXIMUM from another — the first rules in this degree
+// that can be broken by taking too much of something.
 export const SPECIALISATIONS: SeedSpecialisation[] = [
-  { slug: "artificial-intelligence", label: "Artificial Intelligence", code: null, modelled: false },
-  { slug: "computational-foundations", label: "Computational Foundations", code: null, modelled: false },
-  { slug: "computer-systems", label: "Computer Systems", code: null, modelled: false },
-  { slug: "data-science", label: "Data Science", code: null, modelled: false },
+  { slug: "artificial-intelligence", label: "Artificial Intelligence", code: "ARTIF-SPEC", modelled: true },
+  { slug: "computational-foundations", label: "Computational Foundations", code: "COMP-SPEC", modelled: true },
+  { slug: "computer-systems", label: "Computer Systems", code: "CMSY-SPEC", modelled: true },
+  { slug: "data-science", label: "Data Science", code: "DTSC-SPEC", modelled: true },
   {
     slug: "human-centred-and-creative-computing",
     label: "Human-Centred and Creative Computing",
-    code: null,
-    modelled: false,
+    code: "HCCM-SPEC",
+    modelled: true,
   },
-  { slug: "machine-learning", label: "Machine Learning", code: null, modelled: false },
+  { slug: "machine-learning", label: "Machine Learning", code: "MCHL-SPEC", modelled: true },
   {
     slug: "professional-computing",
     label: "Professional Computing",
@@ -107,7 +140,7 @@ export type SeedRequirement = {
   key: string;
   label: string;
   /** See the `kind` column in schema.ts. Omitted means "allocating". */
-  kind?: "allocating" | "floor" | "total";
+  kind?: "allocating" | "floor" | "total" | "cap";
   /** Slug of the specialisation this rule belongs to. Omitted means it is
    *  a program-level rule that always applies. */
   specialisation?: string;
@@ -259,6 +292,227 @@ export const REQUIREMENTS: SeedRequirement[] = [
     kind: "floor",
     requiredUnits: 12,
     sortOrder: 130,
+    minLevel: 8000,
+    maxLevel: 8999,
+  },
+
+  // --- Artificial Intelligence (ARTIF-SPEC), 24 units ------------------
+  // Four named courses worth 24 units between them, so the single allocating
+  // rule is satisfiable only by taking all four.
+  {
+    key: "artif-courses",
+    label: "Specialisation: the four AI courses",
+    detail: "The 24 units must consist of the following courses.",
+    specialisation: "artificial-intelligence",
+    requiredUnits: 24,
+    sortOrder: 200,
+    include: ["COMP6262", "COMP6320", "COMP8620", "COMP8691"],
+  },
+  {
+    key: "artif-min-8000",
+    label: "Specialisation: 8000-level minimum",
+    detail: "A minimum of 12 units of 8000 level courses.",
+    specialisation: "artificial-intelligence",
+    kind: "floor",
+    requiredUnits: 12,
+    sortOrder: 210,
+    minLevel: 8000,
+    maxLevel: 8999,
+  },
+
+  // --- Machine Learning (MCHL-SPEC), 24 units --------------------------
+  {
+    key: "mchl-courses",
+    label: "Specialisation: machine learning courses",
+    detail: "24 units from completion of courses from the following list.",
+    specialisation: "machine-learning",
+    requiredUnits: 24,
+    sortOrder: 300,
+    include: [
+      "COMP6261", "COMP6490", "COMP6528", "COMP6670",
+      "COMP8600", "COMP8650", "COMP8880",
+    ],
+  },
+  {
+    key: "mchl-min-8000",
+    label: "Specialisation: 8000-level minimum",
+    detail: "A minimum of 12 units of 8000-level courses.",
+    specialisation: "machine-learning",
+    kind: "floor",
+    requiredUnits: 12,
+    sortOrder: 310,
+    minLevel: 8000,
+    maxLevel: 8999,
+  },
+
+  // --- Data Science (DTSC-SPEC), 24 units ------------------------------
+  {
+    key: "dtsc-courses",
+    label: "Specialisation: data science courses",
+    detail: "24 units made up of the compulsory courses below plus 6 units of elective.",
+    specialisation: "data-science",
+    requiredUnits: 24,
+    sortOrder: 400,
+    include: [
+      "COMP6240", "COMP8410", "COMP8430",
+      "COMP6490", "COMP6670", "COMP8600", "COMP8650", "COMP8880", "STAT6039",
+    ],
+  },
+  {
+    key: "dtsc-compulsory",
+    label: "Specialisation: compulsory core",
+    detail: "18 units from completion of the following compulsory courses.",
+    specialisation: "data-science",
+    kind: "floor",
+    requiredUnits: 18,
+    sortOrder: 410,
+    include: ["COMP6240", "COMP8410", "COMP8430"],
+  },
+  {
+    key: "dtsc-min-8000",
+    label: "Specialisation: 8000-level minimum",
+    detail: "The 24 units must consist of 12 units of 8000-level courses.",
+    specialisation: "data-science",
+    kind: "floor",
+    requiredUnits: 12,
+    sortOrder: 420,
+    minLevel: 8000,
+    maxLevel: 8999,
+  },
+
+  // --- Computer Systems (CMSY-SPEC), 24 units --------------------------
+  // The first rule in this degree with a ceiling rather than a floor.
+  {
+    key: "cmsy-courses",
+    label: "Specialisation: computer systems courses",
+    detail: "24 units drawn from the two lists below.",
+    specialisation: "computer-systems",
+    requiredUnits: 24,
+    sortOrder: 500,
+    include: [
+      "COMP8300", "COMP8045", "COMP8712",
+      "COMP6310", "COMP6330", "COMP6331", "COMP6361", "COMP6464", "ENGN6213",
+    ],
+  },
+  {
+    key: "cmsy-advanced",
+    label: "Specialisation: advanced systems minimum",
+    detail: "A minimum of 12 units from completion of courses from the following list.",
+    specialisation: "computer-systems",
+    kind: "floor",
+    requiredUnits: 12,
+    sortOrder: 510,
+    include: ["COMP8300", "COMP8045", "COMP8712"],
+  },
+  {
+    key: "cmsy-foundation",
+    label: "Specialisation: foundation systems maximum",
+    detail: "A maximum of 12 units from completion of courses from the following list.",
+    specialisation: "computer-systems",
+    kind: "cap",
+    requiredUnits: 12,
+    sortOrder: 520,
+    include: ["COMP6310", "COMP6330", "COMP6331", "COMP6361", "COMP6464", "ENGN6213"],
+  },
+
+  // --- Computational Foundations (COMP-SPEC), 24 units -----------------
+  {
+    key: "cfnd-courses",
+    label: "Specialisation: computational foundations courses",
+    detail: "24 units drawn from the two lists below.",
+    specialisation: "computational-foundations",
+    requiredUnits: 24,
+    sortOrder: 600,
+    include: [
+      "COMP6361", "COMP6363", "COMP8011", "COMP8460", "MATH6114", "MATH8343",
+      "COMP6261", "COMP6262", "COMP6466", "COMP8712",
+    ],
+  },
+  {
+    key: "cfnd-list-a",
+    label: "Specialisation: theory minimum",
+    detail: "A minimum of 12 units from completion of courses from the following list.",
+    specialisation: "computational-foundations",
+    kind: "floor",
+    requiredUnits: 12,
+    sortOrder: 610,
+    include: ["COMP6361", "COMP6363", "COMP8011", "COMP8460", "MATH6114", "MATH8343"],
+  },
+  {
+    key: "cfnd-list-b",
+    label: "Specialisation: foundations maximum",
+    detail: "A maximum of 12 units from completion of courses from the following list.",
+    specialisation: "computational-foundations",
+    kind: "cap",
+    requiredUnits: 12,
+    sortOrder: 620,
+    include: ["COMP6261", "COMP6262", "COMP6466", "COMP8712"],
+  },
+  {
+    key: "cfnd-min-8000",
+    label: "Specialisation: 8000-level minimum",
+    detail: "A minimum of 12 units of 8000 level courses.",
+    specialisation: "computational-foundations",
+    kind: "floor",
+    requiredUnits: 12,
+    sortOrder: 630,
+    minLevel: 8000,
+    maxLevel: 8999,
+  },
+
+  // --- Human-Centred and Creative Computing (HCCM-SPEC), 24 units ------
+  // 6 compulsory + a 12-unit floor + a 6-unit ceiling = the 24.
+  {
+    key: "hccm-courses",
+    label: "Specialisation: human-centred courses",
+    detail: "24 units made up of the compulsory course and the two lists below.",
+    specialisation: "human-centred-and-creative-computing",
+    requiredUnits: 24,
+    sortOrder: 700,
+    include: [
+      "COMP6390",
+      "COMP8350", "COMP8539", "COMP8610",
+      "COMP6528", "COMP6540", "COMP6720", "COMP6780",
+    ],
+  },
+  {
+    key: "hccm-compulsory",
+    label: "Specialisation: compulsory course",
+    detail: "COMP6390 Human-Computer Interaction.",
+    specialisation: "human-centred-and-creative-computing",
+    kind: "floor",
+    requiredUnits: 6,
+    sortOrder: 710,
+    include: ["COMP6390"],
+  },
+  {
+    key: "hccm-advanced",
+    label: "Specialisation: advanced minimum",
+    detail: "A minimum of 12 units from the following list.",
+    specialisation: "human-centred-and-creative-computing",
+    kind: "floor",
+    requiredUnits: 12,
+    sortOrder: 720,
+    include: ["COMP8350", "COMP8539", "COMP8610"],
+  },
+  {
+    key: "hccm-creative",
+    label: "Specialisation: creative maximum",
+    detail: "A maximum of 6 units from the following list.",
+    specialisation: "human-centred-and-creative-computing",
+    kind: "cap",
+    requiredUnits: 6,
+    sortOrder: 730,
+    include: ["COMP6528", "COMP6540", "COMP6720", "COMP6780"],
+  },
+  {
+    key: "hccm-min-8000",
+    label: "Specialisation: 8000-level minimum",
+    detail: "A minimum of 12 units of 8000-level courses.",
+    specialisation: "human-centred-and-creative-computing",
+    kind: "floor",
+    requiredUnits: 12,
+    sortOrder: 740,
     minLevel: 8000,
     maxLevel: 8999,
   },

@@ -275,3 +275,11 @@ img {
   padding: 0.05rem 0.5rem;
   font-weight: 500;
 }
+
+.verdict.within-limit {
+  color: var(--dim);
+}
+
+.verdict.over-the-limit {
+  color: var(--warn-ink);
+}

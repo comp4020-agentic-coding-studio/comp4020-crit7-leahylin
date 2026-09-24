@@ -33,6 +33,7 @@ const declared = allSpecialisations.find((s) => s.id === plan.specialisationId);
 const unaccounted = progress.specialisationModelled ? 0 : 24;
 
 function verdict(r: (typeof progress.requirements)[number]): string {
+  if (r.kind === "cap") return r.violated ? "over the limit" : "within limit";
   if (r.satisfied) return "done";
   if (r.onTrack) return "on track";
   if (r.countedUnits > 0) return "started";
@@ -138,7 +139,10 @@ function verdict(r: (typeof progress.requirements)[number]): string {
               {requirement.kind === "floor" && (
                 <span class="kindtag">minimum, not an allocation</span>
               )}
-              <span class:list={["verdict", verdict(requirement).replace(" ", "-")]}>
+              {requirement.kind === "cap" && (
+                <span class="kindtag">maximum — stay under this</span>
+              )}
+              <span class:list={["verdict", verdict(requirement).replaceAll(" ", "-")]}>
                 {verdict(requirement)}
               </span>
             </h3>
@@ -154,6 +158,13 @@ function verdict(r: (typeof progress.requirements)[number]): string {
                 {" "}of {requirement.requiredUnits} units
               </span>
             </p>
+            {requirement.violated && (
+              <p class="warn">
+                Over this maximum by {requirement.excessUnits} units. The
+                specialisation only allows {requirement.requiredUnits} units
+                from this list, so some of these cannot count toward it.
+              </p>
+            )}
             {requirement.detail && <p class="rule">{requirement.detail}</p>}
             {
               requirement.countedCodes.length > 0 && (

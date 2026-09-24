@@ -36,7 +36,6 @@ const specialisationId = new Map(
   SPECIALISATIONS.map((specialisation, index) => [specialisation.slug, index + 1] as const),
 );
 const PCOM = specialisationId.get("professional-computing") ?? 0;
-const UNMODELLED = specialisationId.get("machine-learning") ?? 0;
 
 const requirements: Requirement[] = REQUIREMENTS.map((requirement, index) => ({
   id: index + 1,
@@ -148,15 +147,27 @@ describe("the seeded MCOMP rules are internally consistent", () => {
     expect(nonProjectUnits).toBeGreaterThanOrEqual(requirement.requiredUnits);
   });
 
-  it("marks one total rule, and one floor per scope", () => {
+  it("marks one total rule and one degree-wide floor", () => {
     expect(requirements.filter((r) => r.kind === "total")).toHaveLength(1);
-    // One floor across the degree, plus one inside each modelled
-    // specialisation — the two are read differently, see the scoping tests.
-    const floors = requirements.filter((r) => r.kind === "floor");
-    expect(floors.filter((r) => r.specialisationId === null)).toHaveLength(1);
-    expect(floors.filter((r) => r.specialisationId !== null)).toHaveLength(
-      SPECIALISATIONS.filter((specialisation) => specialisation.modelled).length,
+    const degreeWideFloors = requirements.filter(
+      (r) => r.kind === "floor" && r.specialisationId === null,
     );
+    expect(degreeWideFloors.map((r) => r.key)).toEqual(["mcomp-min-8000-comp"]);
+  });
+
+  it("puts every cap inside a specialisation, never at program level", () => {
+    // MCOMP itself has no ceiling rules; three of its specialisations do.
+    const caps = requirements.filter((r) => r.kind === "cap");
+    expect(caps.length).toBeGreaterThan(0);
+    expect(caps.every((r) => r.specialisationId !== null)).toBe(true);
+  });
+
+  it("marks a specialisation as modelled exactly when it has rules", () => {
+    for (const specialisation of SPECIALISATIONS) {
+      const id = specialisationId.get(specialisation.slug);
+      const hasRules = requirements.some((r) => r.specialisationId === id);
+      expect(hasRules, specialisation.slug).toBe(specialisation.modelled);
+    }
   });
 
   it("gives every modelled specialisation exactly 24 units of allocating rules", () => {
@@ -169,15 +180,6 @@ describe("the seeded MCOMP rules are internally consistent", () => {
     }
   });
 
-  it("seeds no rules for a specialisation it admits it has not modelled", () => {
-    for (const specialisation of SPECIALISATIONS.filter((s) => !s.modelled)) {
-      const id = specialisationId.get(specialisation.slug);
-      expect(
-        requirements.filter((r) => r.specialisationId === id),
-        specialisation.slug,
-      ).toHaveLength(0);
-    }
-  });
 });
 
 describe("allocation — a course is spent once", () => {
@@ -470,14 +472,6 @@ describe("specialisations", () => {
     expect(declared.specialisationModelled).toBe(true);
   });
 
-  it("reports an unmodelled specialisation as declared but ruleless", () => {
-    // Six of the seven could not be sourced. Declaring one must not look
-    // like a modelled specialisation with nothing done.
-    const result = run(plan("COMP6120"), UNMODELLED);
-    expect(result.specialisationModelled).toBe(false);
-    expect(result.keys().every((key) => !key.startsWith("pcom-"))).toBe(true);
-  });
-
   it("brings the degree's allocating rules to exactly 96 units once declared", () => {
     // 72 units of program rules + 24 of specialisation. This is the sum the
     // generic "24 units from a specialisation" bucket used to stand in for.
@@ -528,6 +522,130 @@ describe("specialisations", () => {
   });
 });
 
+
+describe("caps — the rules you can break", () => {
+  const CMSY = specialisationId.get("computer-systems") ?? 0;
+  const HCCM = specialisationId.get("human-centred-and-creative-computing") ?? 0;
+
+  it("is satisfied while under its ceiling", () => {
+    // Computer Systems allows a maximum of 12 units from the foundation list.
+    const result = run(plan("COMP6330", "COMP6331"), CMSY).get("cmsy-foundation");
+    expect(result.countedUnits).toBe(12);
+    expect(result.violated).toBe(false);
+    expect(result.satisfied).toBe(true);
+  });
+
+  it("is violated by going over it, and says by how much", () => {
+    const result = run(plan("COMP6330", "COMP6331", "COMP6361"), CMSY).get("cmsy-foundation");
+    expect(result.countedUnits).toBe(18);
+    expect(result.violated).toBe(true);
+    expect(result.satisfied).toBe(false);
+    expect(result.excessUnits).toBe(6);
+  });
+
+  it("is satisfied by taking nothing from the list at all", () => {
+    // A ceiling asks how little you took, so an empty plan passes it — the
+    // opposite of every other kind.
+    const result = run([], CMSY).get("cmsy-foundation");
+    expect(result.countedUnits).toBe(0);
+    expect(result.satisfied).toBe(true);
+    expect(result.violated).toBe(false);
+  });
+
+  it("never reports violated for a kind that is not a cap", () => {
+    const result = run(plan("COMP6250", "COMP6442"), PCOM);
+    expect(result.requirements.filter((r) => r.kind !== "cap").every((r) => !r.violated)).toBe(true);
+  });
+
+  it("does not stop the capped courses counting toward the 24 units", () => {
+    // A cap measures; it does not allocate. The courses still fill the
+    // specialisation's allocating rule.
+    const result = run(plan("COMP6330", "COMP6331"), CMSY);
+    expect(result.get("cmsy-courses").completedUnits).toBe(12);
+    expect(result.get("cmsy-foundation").countedUnits).toBe(12);
+  });
+
+  it("pairs a floor and a ceiling over different lists", () => {
+    // 12 units of advanced systems plus 12 of foundation is the intended
+    // shape of a complete Computer Systems specialisation.
+    const result = run(plan("COMP8300", "COMP8045", "COMP6330", "COMP6331"), CMSY);
+    expect(result.get("cmsy-advanced").countedUnits).toBe(12);
+    expect(result.get("cmsy-advanced").satisfied).toBe(true);
+    expect(result.get("cmsy-foundation").violated).toBe(false);
+    expect(result.get("cmsy-courses").completedUnits).toBe(24);
+  });
+
+  it("fills a rule without breaking a ceiling when a valid choice exists", () => {
+    // 30 units of eligible courses for a 24-unit specialisation: 18 from the
+    // 12-unit-maximum foundation list and 12 from the minimum list. A naive
+    // allocator takes the foundation courses first (they sort earlier) and
+    // then reports BOTH the floor unmet and the ceiling broken, even though
+    // 12 + 12 satisfies each. The allocator defers a course that would push
+    // a ceiling over.
+    const result = run(
+      plan("COMP6330", "COMP6331", "COMP6361", "COMP8300", "COMP8045"),
+      CMSY,
+    );
+    expect(result.get("cmsy-courses").completedUnits).toBe(24);
+    expect(result.get("cmsy-foundation").countedUnits).toBe(12);
+    expect(result.get("cmsy-foundation").violated).toBe(false);
+    expect(result.get("cmsy-advanced").countedUnits).toBe(12);
+    expect(result.get("cmsy-advanced").satisfied).toBe(true);
+    // The odd course out is not wasted and not a breach: it is a 6000-level
+    // COMP course, so a program-level rule picks it up.
+    const programCredited = result.requirements
+      .filter((r) => r.kind === "allocating" && !r.key.startsWith("cmsy-"))
+      .flatMap((r) => r.countedCodes);
+    expect(programCredited).toContain("COMP6361");
+  });
+
+  it("still reports a breach when the plan leaves no other option", () => {
+    // Only foundation courses here, so the ceiling cannot be honoured.
+    const result = run(plan("COMP6330", "COMP6331", "COMP6361"), CMSY);
+    expect(result.get("cmsy-foundation").violated).toBe(true);
+    expect(result.get("cmsy-foundation").excessUnits).toBe(6);
+  });
+
+  it("applies a tighter ceiling where the degree sets one", () => {
+    // Human-Centred allows only 6 units from its creative list, not 12.
+    expect(run(plan("COMP6540"), HCCM).get("hccm-creative").violated).toBe(false);
+    expect(run(plan("COMP6540", "COMP6720"), HCCM).get("hccm-creative").violated).toBe(true);
+  });
+});
+
+describe("every specialisation's own shape", () => {
+  it("makes Artificial Intelligence satisfiable only by all four courses", () => {
+    const ARTIF = specialisationId.get("artificial-intelligence") ?? 0;
+    const three = run(plan("COMP6262", "COMP6320", "COMP8620"), ARTIF).get("artif-courses");
+    expect(three.completedUnits).toBe(18);
+    expect(three.satisfied).toBe(false);
+    const four = run(plan("COMP6262", "COMP6320", "COMP8620", "COMP8691"), ARTIF);
+    expect(four.get("artif-courses").satisfied).toBe(true);
+    expect(four.get("artif-min-8000").satisfied).toBe(true);
+  });
+
+  it("requires all three Data Science compulsory courses", () => {
+    const DTSC = specialisationId.get("data-science") ?? 0;
+    const partial = run(plan("COMP6240", "COMP8410"), DTSC).get("dtsc-compulsory");
+    expect(partial.countedUnits).toBe(12);
+    expect(partial.satisfied).toBe(false);
+    const full = run(plan("COMP6240", "COMP8410", "COMP8430"), DTSC).get("dtsc-compulsory");
+    expect(full.satisfied).toBe(true);
+  });
+
+  it("scopes each specialisation's 8000-level floor to its own courses", () => {
+    // COMP8260 is an 8000-level compulsory core course of the PROGRAM, and
+    // must not help any specialisation meet its internal minimum.
+    for (const slug of SPECIALISATIONS.map((s) => s.slug)) {
+      const id = specialisationId.get(slug) ?? 0;
+      const floor = run(plan("COMP8260"), id).requirements.find(
+        (r) => r.kind === "floor" && r.key.endsWith("min-8000"),
+      );
+      if (floor) expect(floor.countedUnits, slug).toBe(0);
+    }
+  });
+});
+
 describe("evaluatePlan", () => {
   it("returns the program's requirements in display order when nothing is declared", () => {
     const programRules = REQUIREMENTS.filter((r) => r.specialisation === undefined);
@@ -538,12 +656,16 @@ describe("evaluatePlan", () => {
     );
   });
 
-  it("returns the program's and the specialisation's once one is declared", () => {
-    const result = run(plan("COMP6250"), PCOM);
-    expect(result.requirements).toHaveLength(REQUIREMENTS.length);
-    expect(result.requirements.map((r) => r.key)).toEqual(
-      [...REQUIREMENTS].sort((a, b) => a.sortOrder - b.sortOrder).map((r) => r.key),
+  it("returns the program's and only the declared specialisation's", () => {
+    const expected = REQUIREMENTS.filter(
+      (r) => r.specialisation === undefined || r.specialisation === "professional-computing",
     );
+    const result = run(plan("COMP6250"), PCOM);
+    expect(result.requirements.map((r) => r.key)).toEqual(
+      [...expected].sort((a, b) => a.sortOrder - b.sortOrder).map((r) => r.key),
+    );
+    // Nothing from the other six leaks in.
+    expect(result.requirements.some((r) => r.key.startsWith("artif-"))).toBe(false);
   });
 
   it("reports an empty plan as nothing satisfied and nothing surplus", () => {

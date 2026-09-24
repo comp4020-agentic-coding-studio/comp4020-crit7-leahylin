@@ -30,8 +30,20 @@ import type { Course, PlanItem, Requirement, RequirementCourse } from "./schema"
 //                claim about those 24 units, not about the whole plan.
 //   total      — the degree's size. Counts everything, spends nothing, and is
 //                the one bucket meant to be exceeded.
+//   cap        — a CEILING, not a target: "a maximum of 12 units from this
+//                list". Three of the seven specialisations pair a minimum
+//                from one list with a maximum from another. A cap is the one
+//                kind you can BREAK rather than merely leave unfinished, so
+//                it reports `violated` and is satisfied by doing less.
 //
-// Assignment is greedy, most-restrictive-pool first, and atomic per course
+// Assignment is cap-aware: while filling a rule, a course that would push
+// one of its specialisation's ceilings past the limit is deferred and only
+// taken if nothing else can fill the rule. Without that, taking 18 units from
+// a 12-unit-maximum list and 12 from its paired minimum list reports BOTH
+// rules broken, even though a valid 24-unit assignment exists — a false
+// negative of exactly the kind allocation was introduced to remove.
+//
+// Assignment is otherwise greedy, most-restrictive-pool first, and atomic per course
 // (a 6-unit course is never split across two buckets, because ANU doesn't do
 // that). Greedy is not the same as optimal: a truly general answer is a
 // bipartite matching, and a pathological degree could defeat this. Taking the
@@ -61,10 +73,15 @@ export type RequirementProgress = {
   /** The course codes behind those units. */
   countedCodes: string[];
 
+  /** For a cap: staying at or under the ceiling. For everything else:
+   *  completed units alone meet the requirement. */
   satisfied: boolean;
   onTrack: boolean;
   exceeded: boolean;
   excessUnits: number;
+  /** A ceiling actually broken. Only ever true for kind "cap" — the other
+   *  kinds can be unfinished but not wrong. */
+  violated: boolean;
 
   /** Context, not credit: everything in the plan this rule's pool could
    *  accept. For an allocating rule this can exceed countedUnits, and the
@@ -253,12 +270,47 @@ export function evaluatePlan(
           a.course.code.localeCompare(b.course.code),
       );
 
+    // The ceilings this rule's own specialisation imposes. A program-level
+    // rule has none, and a cap never constrains another specialisation.
+    const caps = resolved
+      .filter(
+        (other) =>
+          other.requirement.kind === "cap" &&
+          other.requirement.specialisationId !== null &&
+          other.requirement.specialisationId === rule.requirement.specialisationId,
+      )
+      .map((other) => ({ pool: other.pool, limit: other.requirement.requiredUnits, used: 0 }));
+
     let credited = 0;
-    for (const row of candidates) {
-      if (credited >= rule.requirement.requiredUnits) break;
+    const deferred: typeof candidates = [];
+
+    const take = (row: (typeof candidates)[number]) => {
       rule.credited.push(row);
       unassigned.delete(row);
       credited += row.course.units;
+      for (const cap of caps) {
+        if (cap.pool.has(row.course.id)) cap.used += row.course.units;
+      }
+    };
+
+    for (const row of candidates) {
+      if (credited >= rule.requirement.requiredUnits) break;
+      const wouldBreakACap = caps.some(
+        (cap) => cap.pool.has(row.course.id) && cap.used + row.course.units > cap.limit,
+      );
+      if (wouldBreakACap) {
+        deferred.push(row);
+        continue;
+      }
+      take(row);
+    }
+
+    // Still short: the rule cannot be filled without breaking a ceiling, so
+    // take the deferred courses anyway and let the cap report the breach.
+    // Refusing them would hide units the plan really does contain.
+    for (const row of deferred) {
+      if (credited >= rule.requirement.requiredUnits) break;
+      take(row);
     }
   }
 
@@ -299,6 +351,11 @@ export function evaluatePlan(
       const counted = tally(credited);
       const matched = tally(inPool);
       const countedUnits = counted.completed + counted.planned;
+      const over = countedUnits > requirement.requiredUnits;
+      // A cap inverts the question: it asks how little you took, so it is
+      // satisfied until it is exceeded, and exceeding it is a fault rather
+      // than surplus.
+      const isCap = requirement.kind === "cap";
       return {
         key: requirement.key,
         label: requirement.label,
@@ -309,10 +366,13 @@ export function evaluatePlan(
         plannedUnits: counted.planned,
         countedUnits,
         countedCodes: credited.map((row) => row.course.code).sort(),
-        satisfied: counted.completed >= requirement.requiredUnits,
-        onTrack: countedUnits >= requirement.requiredUnits,
-        exceeded: countedUnits > requirement.requiredUnits,
+        satisfied: isCap
+          ? !over
+          : counted.completed >= requirement.requiredUnits,
+        onTrack: isCap ? !over : countedUnits >= requirement.requiredUnits,
+        exceeded: over,
         excessUnits: Math.max(0, countedUnits - requirement.requiredUnits),
+        violated: isCap && over,
         poolMatchedUnits: matched.completed + matched.planned,
         poolMatchedCodes: inPool.map((row) => row.course.code).sort(),
         poolSize: pool.size,

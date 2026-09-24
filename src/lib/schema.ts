@@ -69,7 +69,11 @@ export const requirements = sqliteTable("requirements", {
   //                the intended reading, not a bug.
   //   total      — the degree's size. Counts everything, spends nothing,
   //                and is the one bucket meant to be exceeded.
-  kind: text({ enum: ["allocating", "floor", "total"] })
+  //   cap        — a CEILING: "a maximum of 12 units from this list". Spends
+  //                nothing, and unlike every other kind it is not something
+  //                to fill but something to stay under, so it is the one
+  //                kind that can be violated outright.
+  kind: text({ enum: ["allocating", "floor", "total", "cap"] })
     .notNull()
     .default("allocating"),
   // The filter half of a pool. All nullable; null means unconstrained.
