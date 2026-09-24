@@ -239,7 +239,7 @@ describe("a specialisation floor folds into its umbrella bucket", () => {
     await post("/api/plan-specialisation", new URLSearchParams({ slug, specialisationId: mchlId }));
   });
 
-  it("shows both the umbrella's and the floor's rule text in one box, with no separate floor section", async () => {
+  it("shows both the umbrella's and the folded floor's rule text, with no separate floor section, and no status line while there's still room to add", async () => {
     const html = await planHtml(slug);
     const planner = between(html, "<h2>ANU Course Planner", "<h2>My Study Plan");
     expect(planner).not.toContain('id="cat-mchl-min-8000"');
@@ -247,17 +247,21 @@ describe("a specialisation floor folds into its umbrella bucket", () => {
     const box = between(planner, 'id="cat-mchl-courses"', "</section>");
     expect(box).toContain("24 units from completion of courses from the following list.");
     expect(box).toContain("A minimum of 12 units of 8000-level courses.");
-    expect(box).toContain("Not yet met.");
-    // The umbrella's own picker is still there — the floor merging into
-    // this box doesn't also swallow the umbrella's own add-a-course action.
+    // Nothing chosen yet, so the umbrella's own 24 units aren't full — the
+    // picker stays up, and there's no "not yet met"/"already in your plan"
+    // note to show until this box actually closes (see the two tests below).
     expect(box).toContain('class="picker"');
+    expect(box).not.toContain("Not yet met.");
+    expect(box).not.toContain("Every course in this category is already in your plan.");
   });
 
-  it("switches the folded floor's line to the satisfied message once it's covered", async () => {
-    // mchl-min-8000 needs 12 units of 8000-level courses among whatever
-    // mchl-courses already credited. COMP8600 and COMP8650 are both
-    // 8000-level and both in the same pool, so two courses clear it.
-    for (const code of ["COMP8600", "COMP8650"]) {
+  it("shows exactly one note — the satisfied one — once both the umbrella and its folded floor are covered", async () => {
+    // Four 6-unit courses closes the 24-unit umbrella exactly. Two of them,
+    // COMP8600 and COMP8650, are 8000-level, clearing mchl-min-8000 (12u) at
+    // the same time — so both the umbrella and the folded floor finish
+    // together, which is exactly the case that used to print the same
+    // "already in your plan" sentence twice.
+    for (const code of ["COMP6261", "COMP6490", "COMP8600", "COMP8650"]) {
       const page = await planHtml(slug);
       const courseId = courseIdFor(page, code);
       await post("/api/plan-items", new URLSearchParams({ slug, courseId, status: "completed" }));
@@ -266,8 +270,54 @@ describe("a specialisation floor folds into its umbrella bucket", () => {
     const after = await planHtml(slug);
     const planner = between(after, "<h2>ANU Course Planner", "<h2>My Study Plan");
     const box = between(planner, 'id="cat-mchl-courses"', "</section>");
+    expect(box).not.toContain('class="picker"');
+    const noteCount = box.split('<p class="note">').length - 1;
+    expect(noteCount).toBe(1);
     expect(box).toContain("Every course in this category is already in your plan.");
-    expect(box).not.toContain("Not yet met.");
+  });
+
+  it("shows exactly one note — 'Not yet met.' — when the umbrella is full but its folded floor isn't", async () => {
+    // A fresh plan, not the shared one the other two tests in this block
+    // build up cumulatively — reusing it here would leave COMP8600 and
+    // COMP8650 from the earlier "satisfied" test still in the pool, which
+    // would either satisfy the floor by accident or get credited to a
+    // different bucket entirely depending on allocation tie-breaks. A clean
+    // plan makes the four courses below the only ones in play.
+    const res = await post(
+      "/api/plans",
+      new URLSearchParams({ label: `fold probe unmet ${process.hrtime.bigint()}` }),
+    );
+    const location = res.headers.get("location");
+    if (!location) throw new Error("plan creation did not redirect");
+    const freshSlug = location.replace(/^\/plan\//, "").replace(/\/$/, "");
+    const start = await planHtml(freshSlug);
+    const mchlId = new RegExp('<option value="(\\d+)"[^>]*>\\s*Machine Learning').exec(start)?.[1];
+    if (!mchlId) throw new Error("Machine Learning not found in the specialisation list");
+    await post(
+      "/api/plan-specialisation",
+      new URLSearchParams({ slug: freshSlug, specialisationId: mchlId }),
+    );
+
+    // All four are below 8000-level, so the umbrella's 24 units are used up
+    // (isFull) while mchl-min-8000 (12 units required) has zero units — the
+    // box has nothing left to add, and it's genuinely still unmet.
+    for (const code of ["COMP6261", "COMP6490", "COMP6528", "COMP6670"]) {
+      const page = await planHtml(freshSlug);
+      const courseId = courseIdFor(page, code);
+      await post(
+        "/api/plan-items",
+        new URLSearchParams({ slug: freshSlug, courseId, status: "completed" }),
+      );
+    }
+
+    const after = await planHtml(freshSlug);
+    const planner = between(after, "<h2>ANU Course Planner", "<h2>My Study Plan");
+    const box = between(planner, 'id="cat-mchl-courses"', "</section>");
+    expect(box).not.toContain('class="picker"');
+    const noteCount = box.split('<p class="note">').length - 1;
+    expect(noteCount).toBe(1);
+    expect(box).toContain("Not yet met.");
+    expect(box).not.toContain("Every course in this category is already in your plan.");
   });
 });
 

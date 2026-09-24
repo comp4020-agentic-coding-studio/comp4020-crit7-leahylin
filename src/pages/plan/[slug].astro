@@ -42,12 +42,6 @@ const categories = progress.requirements.filter((r) => r.kind !== "total");
 const { visible: visibleCategories, foldedInto: floorsFoldedIntoKey } =
   foldSpecialisationFloors(categories, specialisationIdByKey);
 
-function floorCheckLine(floor: (typeof categories)[number]): string {
-  return floor.onTrack
-    ? "Every course in this category is already in your plan."
-    : "Not yet met.";
-}
-
 const allSpecialisations = listSpecialisations();
 const declared = allSpecialisations.find((s) => s.id === plan.specialisationId);
 
@@ -192,6 +186,17 @@ function semesterSlug(semester: string | null): string {
                   poolsByKey,
                   chosenIds,
                 );
+          // Once this box has nothing left to accept — its own pool is full
+          // or exhausted — there's exactly one true thing left to say about
+          // it, not two: either every folded floor is also covered ("done"),
+          // or at least one isn't ("not yet met" — and there's nothing more
+          // to add here that would fix it, so no picker either). Vacuously
+          // true with no folded floors, which is every OTHER category, so
+          // this reduces to the original single-note behaviour for them.
+          const boxClosed = !isFloor && (isFull || options.length === 0);
+          const allFoldedFloorsMet = foldedFloors.every(
+            (floor) => floor.onTrack,
+          );
           const selectId = `add-${requirement.key}`;
           const semesterId = `${selectId}-semester`;
           return (
@@ -219,19 +224,21 @@ function semesterSlug(semester: string | null): string {
               {
                 /* A specialisation's own floor(s) — internal minimums with
                    no pool of their own — fold straight into this box rather
-                   than getting a disconnected section: their rule text
-                   alongside this bucket's, then one line each for whether
-                   they're already covered by what's been picked so far. */
-                foldedFloors.map((floor) => (
-                  <>
-                    {floor.detail && <p class="rule">{floor.detail}</p>}
-                    <p class="note">{floorCheckLine(floor)}</p>
-                  </>
-                ))
+                   than getting a disconnected section: just their rule text
+                   here. Whether each is covered folds into the ONE status
+                   line below, once this box has nothing left to add — not
+                   a status line per floor, which could say "not yet met"
+                   right next to this box's own "already in your plan" for
+                   the exact same set of courses. */
+                foldedFloors.map(
+                  (floor) => floor.detail && <p class="rule">{floor.detail}</p>,
+                )
               }
-              {isFloor ? null : isFull || options.length === 0 ? (
+              {isFloor ? null : boxClosed ? (
                 <p class="note">
-                  Every course in this category is already in your plan.
+                  {allFoldedFloorsMet
+                    ? "Every course in this category is already in your plan."
+                    : "Not yet met."}
                 </p>
               ) : (
                 <form method="post" action="/api/plan-items" class="picker">
