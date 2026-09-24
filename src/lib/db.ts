@@ -4,7 +4,12 @@ import Database from "better-sqlite3";
 import { and, asc, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
-import { type PlanProgress, evaluatePlan } from "./progress";
+import {
+  type PlanProgress,
+  type RequirementProgress,
+  evaluatePlan,
+  resolvePool,
+} from "./progress";
 import {
   type Course,
   type Plan,
@@ -93,15 +98,26 @@ export function addToPlan(
   planId: number,
   courseId: number,
   status: "completed" | "planned",
+  semester: string | null,
 ): void {
   // UNIQUE (plan_id, course_id) means re-adding a course moves it between
-  // completed and planned rather than stacking a second copy of its units.
+  // completed and planned (and updates its semester) rather than stacking a
+  // second copy of its units.
   db.insert(planItems)
-    .values({ planId, courseId, status })
+    .values({ planId, courseId, status, semester })
     .onConflictDoUpdate({
       target: [planItems.planId, planItems.courseId],
-      set: { status },
+      set: { status, semester },
     })
+    .run();
+}
+
+/** Re-file an existing plan item under a different semester without
+ *  touching its completed/planned status. */
+export function moveToSemester(planId: number, courseId: number, semester: string | null): void {
+  db.update(planItems)
+    .set({ semester })
+    .where(and(eq(planItems.planId, planId), eq(planItems.courseId, courseId)))
     .run();
 }
 
@@ -111,29 +127,99 @@ export function removeFromPlan(planId: number, courseId: number): void {
     .run();
 }
 
+/** The semester labels a student can file a course under: the current year
+ *  through three years ahead, two semesters each. Generated rather than
+ *  stored, so the list quietly rolls forward every year with no migration
+ *  and no seed row to keep in sync. */
+export function semesterOptions(now: Date = new Date()): string[] {
+  const startYear = now.getFullYear();
+  const options: string[] = [];
+  for (let year = startYear; year <= startYear + 3; year += 1) {
+    options.push(`${year} Semester 1`, `${year} Semester 2`);
+  }
+  return options;
+}
+
+export type ChosenItem = {
+  course: Course;
+  status: "completed" | "planned";
+  semester: string | null;
+};
+
 /** Everything a plan page renders: the plan, its courses, and the verdict. */
 export function planProgress(plan: Plan): {
   progress: PlanProgress;
-  chosen: { course: Course; status: "completed" | "planned" }[];
+  chosen: ChosenItem[];
+  /** Every requirement's own candidate pool, resolved once here so the page
+   *  and the category-selector helper below don't each recompute it. */
+  poolsByRequirement: Map<number, ReturnType<typeof resolvePool>>;
 } {
   const catalogue = listCourses();
   const byId = new Map(catalogue.map((course) => [course.id, course]));
   const items = db.select().from(planItems).where(eq(planItems.planId, plan.id)).all();
+  const allRequirements = db.select().from(requirements).all();
+  const poolRows = db.select().from(requirementCourses).all();
 
   const progress = evaluatePlan(
     catalogue,
-    db.select().from(requirements).all(),
-    db.select().from(requirementCourses).all(),
+    allRequirements,
+    poolRows,
     items.map((item) => ({ courseId: item.courseId, status: item.status })),
     plan.specialisationId,
   );
 
-  const chosen = items
+  const chosen: ChosenItem[] = items
     .flatMap((item) => {
       const course = byId.get(item.courseId);
-      return course ? [{ course, status: item.status }] : [];
+      return course ? [{ course, status: item.status, semester: item.semester }] : [];
     })
     .sort((a, b) => a.course.code.localeCompare(b.course.code));
 
-  return { progress, chosen };
+  const poolsByRequirement = new Map(
+    allRequirements.map((requirement) => [
+      requirement.id,
+      resolvePool(requirement, catalogue, poolRows),
+    ]),
+  );
+
+  return { progress, chosen, poolsByRequirement };
+}
+
+/** For one requirement, the courses in its pool not already in the plan —
+ *  what "ANU Course Planner" offers to add under that category. Sorted by
+ *  code, same as everywhere else courses are listed. */
+export function availableForRequirement(
+  requirement: RequirementProgress & { id: number },
+  catalogue: Course[],
+  poolsByRequirement: Map<number, ReturnType<typeof resolvePool>>,
+  chosenIds: Set<number>,
+): Course[] {
+  const pool = poolsByRequirement.get(requirement.id) ?? new Set<number>();
+  return catalogue
+    .filter((course) => pool.has(course.id) && !chosenIds.has(course.id))
+    .sort((a, b) => a.code.localeCompare(b.code));
+}
+
+export type SemesterGroup = { semester: string | null; items: ChosenItem[] };
+
+/** The study plan, grouped by semester — "Not yet scheduled" last, everything
+ *  else in the chronological order the generated dropdown produces, which a
+ *  plain string sort already gets right ("2026 Semester 1" < "2026 Semester
+ *  2" < "2027 Semester 1"). */
+export function studyPlanBySemester(chosen: ChosenItem[]): SemesterGroup[] {
+  const groups = new Map<string | null, ChosenItem[]>();
+  for (const item of chosen) {
+    const key = item.semester;
+    const bucket = groups.get(key);
+    if (bucket) bucket.push(item);
+    else groups.set(key, [item]);
+  }
+
+  const scheduled = [...groups.entries()]
+    .filter((entry): entry is [string, ChosenItem[]] => entry[0] !== null)
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([semester, items]) => ({ semester, items }));
+
+  const unscheduled = groups.get(null);
+  return unscheduled ? [...scheduled, { semester: null, items: unscheduled }] : scheduled;
 }

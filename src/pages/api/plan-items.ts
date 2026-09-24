@@ -1,5 +1,5 @@
 import type { APIRoute } from "astro";
-import { addToPlan, getPlan, removeFromPlan } from "../../lib/db";
+import { addToPlan, getPlan, moveToSemester, removeFromPlan } from "../../lib/db";
 import { publishPlanUpdate } from "../../lib/events";
 
 // Add a course to a plan, move it between completed and planned, or drop it.
@@ -13,13 +13,18 @@ export const POST: APIRoute = async ({ request, redirect }) => {
 
   const courseId = Number(form.get("courseId"));
   const action = String(form.get("action") ?? "add");
+  // "" means "not yet scheduled" on the wire, null in the database.
+  const rawSemester = form.get("semester");
+  const semester = rawSemester ? String(rawSemester) : null;
 
   if (Number.isInteger(courseId) && courseId > 0) {
     if (action === "remove") {
       removeFromPlan(plan.id, courseId);
+    } else if (action === "move") {
+      moveToSemester(plan.id, courseId, semester);
     } else {
       const status = form.get("status") === "completed" ? "completed" : "planned";
-      addToPlan(plan.id, courseId, status);
+      addToPlan(plan.id, courseId, status, semester);
     }
     // Tell every other open tab showing this plan to refresh.
     publishPlanUpdate(plan.slug);
