@@ -220,3 +220,67 @@ describe("floor categories in the Course Planner have no picker of their own", (
     }
   });
 });
+
+describe("an allocating or cap category hides its picker once full", () => {
+  let slug: string;
+
+  beforeAll(async () => {
+    const res = await post(
+      "/api/plans",
+      new URLSearchParams({ label: `full-category probe ${process.hrtime.bigint()}` }),
+    );
+    const location = res.headers.get("location");
+    if (!location) throw new Error("plan creation did not redirect");
+    slug = location.replace(/^\/plan\//, "").replace(/\/$/, "");
+  });
+
+  it("hides the foundational picker after just one of its two either/or courses", async () => {
+    // The pool holds 12 units across MATH6005 and COMP6260 for a 6-unit
+    // requirement, so one course alone meets it — the other should stop
+    // being offered rather than dangle as if it still mattered here.
+    const before = await planHtml(slug);
+    const courseId = courseIdFor(before, "MATH6005");
+    await post("/api/plan-items", new URLSearchParams({ slug, courseId, status: "completed" }));
+
+    const after = await planHtml(slug);
+    const planner = between(after, "<h2>ANU Course Planner", "<h2>My Study Plan");
+    const category = between(planner, 'id="cat-mcomp-foundational"', "</section>");
+    expect(category).not.toContain('class="picker"');
+    expect(category).toContain("already in your plan");
+    // The picker is gone, but COMP6260 must still be choosable elsewhere —
+    // this is about foundational specifically, not about removing the
+    // course from the catalogue.
+    expect(planner).toContain("COMP6260");
+  });
+
+  it("keeps a cap's picker visible at zero units — full means AT the ceiling, not merely not-yet-over", async () => {
+    // onTrack for a cap means "not exceeded", which is true before anything
+    // has been chosen at all. Using that field directly would hide the
+    // picker from the very start, which is the bug this guards against.
+    const html = await planHtml(slug);
+    const cmsyId = new RegExp('<option value="(\\d+)"[^>]*>\\s*Computer Systems').exec(html)?.[1];
+    if (!cmsyId) throw new Error("Computer Systems not found in the specialisation list");
+    await post("/api/plan-specialisation", new URLSearchParams({ slug, specialisationId: cmsyId }));
+
+    const after = await planHtml(slug);
+    const planner = between(after, "<h2>ANU Course Planner", "<h2>My Study Plan");
+    const category = between(planner, 'id="cat-cmsy-foundation"', "</section>");
+    expect(category).toContain('class="picker"');
+  });
+
+  it("hides that same cap's picker once it reaches its ceiling", async () => {
+    const before = await planHtml(slug);
+    for (const code of ["COMP6330", "COMP6331"]) {
+      const html = await planHtml(slug);
+      const courseId = courseIdFor(html, code);
+      await post("/api/plan-items", new URLSearchParams({ slug, courseId, status: "completed" }));
+    }
+    void before;
+
+    const after = await planHtml(slug);
+    const planner = between(after, "<h2>ANU Course Planner", "<h2>My Study Plan");
+    const category = between(planner, 'id="cat-cmsy-foundation"', "</section>");
+    expect(category).not.toContain('class="picker"');
+    expect(category).toContain("already in your plan");
+  });
+});

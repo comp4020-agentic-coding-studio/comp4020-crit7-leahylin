@@ -146,9 +146,25 @@ function semesterSlug(semester: string | null): string {
           // course under Professional Computing's own 8000-level minimum —
           // adding it there does nothing for that requirement at all.
           const isFloor = requirement.kind === "floor";
-          const options = isFloor
-            ? []
-            : availableForRequirement(requirement, catalogue, poolsByKey, chosenIds);
+          // Once a category already has enough units in the plan, there's
+          // no point still offering the rest of its pool. Foundational's
+          // pool is 12 units of either/or courses for a 6-unit requirement,
+          // so after MATH6005 alone the picker would otherwise keep
+          // dangling COMP6260 as if it still mattered here; it doesn't —
+          // adding it would just be routed to whichever other category can
+          // still use it (or become surplus), not to this one.
+          //
+          // Deliberately NOT requirement.onTrack: for a cap that field means
+          // "not yet over its ceiling", which is true at zero units chosen —
+          // it would hide the picker before the student has picked anything.
+          // countedUnits >= requiredUnits means the same thing as onTrack
+          // for every OTHER kind, and means "at the ceiling" for a cap,
+          // which is the "full" this is actually asking about.
+          const isFull = !isFloor && requirement.countedUnits >= requirement.requiredUnits;
+          const options =
+            isFloor || isFull
+              ? []
+              : availableForRequirement(requirement, catalogue, poolsByKey, chosenIds);
           const selectId = `add-${requirement.key}`;
           const semesterId = `${selectId}-semester`;
           return (
@@ -169,7 +185,7 @@ function semesterSlug(semester: string | null): string {
                   other categories above — there's no separate list to add from
                   here.
                 </p>
-              ) : options.length === 0 ? (
+              ) : isFull || options.length === 0 ? (
                 <p class="note">Every course in this category is already in your plan.</p>
               ) : (
                 <form method="post" action="/api/plan-items" class="picker">
