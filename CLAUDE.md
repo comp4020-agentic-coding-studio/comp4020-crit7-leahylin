@@ -36,6 +36,17 @@ survived. Rolling a schema back by hand does not count — hand-dropping a
 column with a foreign key leaves SQLite in a state no real deploy produces,
 and you will debug a problem you invented.
 
+**Taking something out of the data is a change too.** An upsert can add a
+requirement and correct one, but never notice one removed from
+`seed-data.ts`. When Data Science's single 24-unit list was split into its
+compulsory and elective blocks, the old row would have stayed in every
+existing database with its pool rows dropped — and a requirement with no
+pool is an open one, so it would have counted every course. The seed now
+deletes requirements that are no longer in the data. `spec/seed.test.ts`
+runs the seed against a migrated database that already holds rows; that is
+where a change like this is proved, because the HTTP specs only ever see a
+fresh one.
+
 ---
 
 ## 2. A test that doesn't fail when you break the code is not a test.
