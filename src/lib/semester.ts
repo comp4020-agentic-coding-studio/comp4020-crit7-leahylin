@@ -6,19 +6,16 @@ import type { Course, PlanItem } from "./schema";
 // without the migrate()/seed() side effects that importing src/lib/db.ts
 // triggers.
 
-/** The semester labels a student can file a course under: the current year
- *  through three years ahead, two semesters each. Generated rather than
- *  stored, so the list quietly rolls forward every year with nothing to
- *  seed or migrate — and every value it can produce sorts correctly as a
- *  plain string ("2026 Semester 1" < "2026 Semester 2" < "2027 Semester 1"),
- *  which is what makes studyPlanBySemester's ordering below just a sort. */
-export function semesterOptions(now: Date = new Date()): string[] {
-  const startYear = now.getFullYear();
-  const options: string[] = [];
-  for (let year = startYear; year <= startYear + 3; year += 1) {
-    options.push(`${year} Semester 1`, `${year} Semester 2`);
-  }
-  return options;
+/** The four semesters of the Master of Computing's two-year full-time
+ *  duration for a 2025 intake: 2025 Semester 1 through 2026 Semester 2.
+ *  Fixed rather than generated from today's date — this app models one
+ *  cohort's degree timeline, not an open-ended calendar, so the dropdown
+ *  should offer exactly the semesters that cohort's plan can span, no more.
+ *  Every value here already sorts correctly as a plain string ("2025
+ *  Semester 1" < "2025 Semester 2" < "2026 Semester 1"), which is what
+ *  makes studyPlanBySemester's ordering below just a sort. */
+export function semesterOptions(): string[] {
+  return ["2025 Semester 1", "2025 Semester 2", "2026 Semester 1", "2026 Semester 2"];
 }
 
 export type ChosenItem = {

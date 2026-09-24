@@ -97,12 +97,12 @@ describe("the study plan groups by semester", () => {
     );
     await post(
       "/api/plan-items",
-      new URLSearchParams({ slug, courseId, action: "move", semester: "2027 Semester 1" }),
+      new URLSearchParams({ slug, courseId, action: "move", semester: "2025 Semester 1" }),
     );
 
     const after = await planHtml(slug);
     const studyPlan = between(after, "<h2>My Study Plan", "<h2>Degree Progress");
-    const newGroup = semesterGroup(studyPlan, "2027-semester-1");
+    const newGroup = semesterGroup(studyPlan, "2025-semester-1");
     expect(rowsFor(newGroup, "COMP6442")).toBe(1);
     expect(rowsFor(semesterGroup(studyPlan, "2026-semester-2"), "COMP6442")).toBe(0);
 
@@ -127,12 +127,12 @@ describe("the study plan groups by semester", () => {
     // plain add path, which UNIQUE (plan_id, course_id) turns into an update.
     await post(
       "/api/plan-items",
-      new URLSearchParams({ slug, courseId, status: "completed", semester: "2028 Semester 1" }),
+      new URLSearchParams({ slug, courseId, status: "completed", semester: "2025 Semester 2" }),
     );
 
     const after = await planHtml(slug);
     const studyPlan = between(after, "<h2>My Study Plan", "<h2>Degree Progress");
-    expect(rowsFor(semesterGroup(studyPlan, "2028-semester-1"), "MATH6005")).toBe(1);
+    expect(rowsFor(semesterGroup(studyPlan, "2025-semester-2"), "MATH6005")).toBe(1);
     expect(rowsFor(semesterGroup(studyPlan, "2026-semester-1"), "MATH6005")).toBe(0);
     // Exactly one row for this course anywhere in the whole study plan —
     // re-adding must re-file it, not add a second copy under the new group.

@@ -22,17 +22,13 @@ function item(code: string, semester: string | null, status: ChosenItem["status"
 }
 
 describe("semesterOptions", () => {
-  it("generates two semesters a year for four years from a fixed date", () => {
-    expect(semesterOptions(new Date("2026-03-01"))).toEqual([
-      "2026 Semester 1", "2026 Semester 2",
-      "2027 Semester 1", "2027 Semester 2",
-      "2028 Semester 1", "2028 Semester 2",
-      "2029 Semester 1", "2029 Semester 2",
+  it("offers exactly the four semesters of a 2025-intake, two-year MCOMP", () => {
+    // Fixed, not generated from today's date — this models one cohort's
+    // degree timeline, not an open-ended calendar, so a course can only be
+    // filed under a semester that cohort's plan could actually span.
+    expect(semesterOptions()).toEqual([
+      "2025 Semester 1", "2025 Semester 2", "2026 Semester 1", "2026 Semester 2",
     ]);
-  });
-
-  it("starts from whatever year 'now' is, not a hardcoded one", () => {
-    expect(semesterOptions(new Date("2031-11-01"))[0]).toBe("2031 Semester 1");
   });
 });
 
