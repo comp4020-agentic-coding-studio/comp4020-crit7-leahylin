@@ -139,6 +139,12 @@ export const planItems = sqliteTable(
     status: text({ enum: ["completed", "planned"] })
       .notNull()
       .default("planned"),
+    // Which semester this course is filed under, e.g. "2026 Semester 1".
+    // Nullable: null means "not yet scheduled". The app only ever writes a
+    // value chosen from a generated <select> (see the plan page), so this
+    // stays a small, sortable set of strings despite the column being plain
+    // text — no enum, because the set of valid values shifts every year.
+    semester: text(),
   },
   // A course sits in a plan once; adding it again changes its status
   // rather than stacking up duplicate units.

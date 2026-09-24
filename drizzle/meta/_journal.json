@@ -36,6 +36,13 @@
       "when": 1790171036728,
       "tag": "0004_specialisations",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1790216642665,
+      "tag": "0005_plan_item_semester",
+      "breakpoints": true
     }
   ]
 }
