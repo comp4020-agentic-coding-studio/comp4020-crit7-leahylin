@@ -56,7 +56,12 @@ export type PoolRow = Pick<RequirementCourse, "requirementId" | "courseId" | "ro
 
 /** Just the plan columns the engine reads — no plan id, so a caller can pass
  *  a hypothetical plan that was never stored. */
-export type PlanEntry = Pick<PlanItem, "courseId" | "status">;
+export type PlanEntry = Pick<PlanItem, "courseId" | "status"> & {
+  /** How many of the course's units are completed, when that isn't simply
+   *  all or nothing: a two-semester course (COMP8715) whose first semester
+   *  is done and second isn't is 6 of 12. Omitted, `status` decides. */
+  completedUnits?: number;
+};
 
 export type RequirementProgress = {
   key: string;
@@ -196,8 +201,10 @@ function tally(rows: { entry: PlanEntry; course: Course }[]) {
   let completed = 0;
   let planned = 0;
   for (const { entry, course } of rows) {
-    if (entry.status === "completed") completed += course.units;
-    else planned += course.units;
+    const done =
+      entry.completedUnits ?? (entry.status === "completed" ? course.units : 0);
+    completed += done;
+    planned += course.units - done;
   }
   return { completed, planned };
 }
@@ -395,4 +402,21 @@ export function evaluatePlan(
     surplusUnits: surplus.completed + surplus.planned,
     surplusCodes: [...unassigned].map((row) => row.course.code).sort(),
   };
+}
+
+/**
+ * Whether the plan, counting COMPLETED courses only, meets the whole
+ * degree: every requirement satisfied (planned courses don't count), no
+ * ceiling broken, and a specialisation declared whose rules are modelled.
+ * Without a modelled specialisation, 24 of the 96 units are checked against
+ * nothing, so the app can't honestly say the degree is done.
+ */
+export function degreeComplete(progress: PlanProgress): boolean {
+  return (
+    progress.specialisationModelled &&
+    progress.requirements.length > 0 &&
+    progress.requirements.every((requirement) =>
+      requirement.kind === "cap" ? !requirement.violated : requirement.satisfied,
+    )
+  );
 }

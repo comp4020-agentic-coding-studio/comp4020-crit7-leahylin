@@ -3,6 +3,7 @@ import {
   type PlanEntry,
   type PoolRow,
   type RequirementProgress,
+  degreeComplete,
   evaluatePlan,
   resolvePool,
 } from "../src/lib/progress";
@@ -681,5 +682,73 @@ describe("evaluatePlan", () => {
       { courseId: 99_999, status: "completed" },
     ]);
     expect(result.totalUnits).toBe(0);
+  });
+});
+
+describe("a course completed only in part (COMP8715, one semester of two)", () => {
+  // COMP8715 is 6+6 over two semesters, each completed on its own. The app
+  // passes the completed half as completedUnits; the engine must split the
+  // course's units between completed and planned accordingly.
+  const halfDone: PlanEntry[] = [
+    { courseId: courseId("COMP8715"), status: "completed", completedUnits: 6 },
+  ];
+
+  it("counts the finished semester as completed and the other as planned", () => {
+    const result = run(halfDone);
+    const project = result.get("mcomp-project");
+    expect(project.completedUnits).toBe(6);
+    expect(project.plannedUnits).toBe(6);
+    // On track, but not yet satisfied: satisfied means completed alone.
+    expect(project.onTrack).toBe(true);
+    expect(project.satisfied).toBe(false);
+    expect(result.completedUnits).toBe(6);
+    expect(result.plannedUnits).toBe(6);
+  });
+
+  it("is satisfied once both semesters are completed", () => {
+    const result = run([{ courseId: courseId("COMP8715"), status: "completed", completedUnits: 12 }]);
+    expect(result.get("mcomp-project").satisfied).toBe(true);
+  });
+
+  it("still lets status decide when completedUnits isn't given", () => {
+    expect(run(plan(["COMP8715", "planned"])).get("mcomp-project").completedUnits).toBe(0);
+    expect(run(plan("COMP8715")).get("mcomp-project").completedUnits).toBe(12);
+  });
+});
+
+describe("degreeComplete: the whole degree, completed", () => {
+  // The same 96 units the total's tests use: core, foundational, the
+  // capstone, five 8000-level COMP courses, and Professional Computing's
+  // courses — declared, so its rules are checked too.
+  const full = [...CORE, "MATH6005", "COMP8715", ...EIGHT_THOUSANDS,
+    "COMP6120", "ENGN8100", "COMP6240", "COMP6331"];
+
+  it("is true when every course is completed and the specialisation is declared", () => {
+    expect(degreeComplete(run(plan(...full), PCOM))).toBe(true);
+  });
+
+  it("is false while any course is only planned", () => {
+    const oneLeft = full.map((code) =>
+      code === "COMP8600" ? ([code, "planned"] as [string, "planned"]) : code,
+    );
+    expect(degreeComplete(run(plan(...oneLeft), PCOM))).toBe(false);
+  });
+
+  it("is false with only half of the two-semester capstone completed", () => {
+    const entries = plan(...full).map((entry) =>
+      entry.courseId === courseId("COMP8715") ? { ...entry, completedUnits: 6 } : entry,
+    );
+    expect(degreeComplete(run(entries, PCOM))).toBe(false);
+  });
+
+  it("is false with no specialisation declared, even at 96 completed units", () => {
+    const result = run(plan(...full));
+    expect(result.get("mcomp-total").satisfied).toBe(true);
+    expect(degreeComplete(result)).toBe(false);
+  });
+
+  it("is false when a unit short, even if the rest is done", () => {
+    const short = full.filter((code) => code !== "COMP6331");
+    expect(degreeComplete(run(plan(...short), PCOM))).toBe(false);
   });
 });
