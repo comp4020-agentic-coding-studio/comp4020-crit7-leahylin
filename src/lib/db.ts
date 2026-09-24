@@ -1,20 +1,31 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import Database from "better-sqlite3";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import {
   type PlanProgress,
-  type RequirementProgress,
   evaluatePlan,
   resolvePool,
 } from "./progress";
 import {
   type ChosenItem,
   type SemesterGroup,
+  type SemesterRow,
+  canStartIn,
+  everySemester,
+  FULL_TIME_LOAD,
+  INTAKES,
+  isIntake,
+  isTwoSemester,
+  semestersBetween,
+  shiftSemester,
   semesterOptions,
+  semesterUnits,
+  startSemesters,
   studyPlanBySemester,
+  unitsPerSemester,
 } from "./semester";
 import {
   type Course,
@@ -27,6 +38,7 @@ import {
   requirements,
   specialisations,
 } from "./schema";
+import { DEMO_PLAN } from "./seed-data";
 import { seed } from "./seed";
 
 // One SQLite file is the app's whole persistent state. In production
@@ -69,12 +81,52 @@ export function declareSpecialisation(planId: number, specialisationId: number |
   db.update(plans).set({ specialisationId }).where(eq(plans.id, planId)).run();
 }
 
+export function getCourse(id: number): Course | undefined {
+  return listCourses().find((course) => course.id === id);
+}
+
 export function listCourses(): Course[] {
   return db.select().from(courses).orderBy(asc(courses.code)).all();
 }
 
 export function listPlans(): Plan[] {
   return db.select().from(plans).orderBy(asc(plans.label)).all();
+}
+
+/** Change when a plan starts, moving everything already scheduled by the
+ *  same number of semesters so the study plan keeps its shape: a course in
+ *  the first semester stays in the first semester. Unscheduled courses stay
+ *  unscheduled. Ignores anything that isn't one of INTAKES. */
+export function setIntake(planId: number, intake: string): void {
+  if (!isIntake(intake)) return;
+  const plan = db.select().from(plans).where(eq(plans.id, planId)).get();
+  if (!plan || plan.intake === intake) return;
+  const by = semestersBetween(plan.intake, intake);
+  // Synchronous callback: better-sqlite3's transactions reject a promise.
+  db.transaction((tx) => {
+    tx.update(plans).set({ intake }).where(eq(plans.id, planId)).run();
+    const items = tx.select().from(planItems).where(eq(planItems.planId, planId)).all();
+    for (const item of items) {
+      if (item.semester === null) continue;
+      tx.update(planItems)
+        .set({ semester: shiftSemester(item.semester, by) })
+        .where(eq(planItems.id, item.id))
+        .run();
+    }
+  });
+}
+
+/** The demo plan is re-created at every boot (the route invariants need
+ *  /plan/demo/ to exist), so deleting it would only make it reappear. */
+export function canDeletePlan(slug: string): boolean {
+  return slug !== DEMO_PLAN.slug;
+}
+
+/** Delete a plan and, through ON DELETE CASCADE, every course in it.
+ *  Returns false, deleting nothing, for the demo plan or an unknown slug. */
+export function deletePlan(slug: string): boolean {
+  if (!canDeletePlan(slug)) return false;
+  return db.delete(plans).where(eq(plans.slug, slug)).run().changes > 0;
 }
 
 export function getPlan(slug: string): Plan | undefined {
@@ -118,6 +170,32 @@ export function addToPlan(
     .run();
 }
 
+/** Set the status of ONE semester of a two-semester course. Part 1 is the
+ *  row's `status`, part 2 its `second_status`. Changing part 1 first pins
+ *  part 2 to what it currently shows (a null second status follows the
+ *  first), so marking the first semester done never marks the second. */
+export function setPartStatus(
+  planId: number,
+  courseId: number,
+  part: 1 | 2,
+  status: "completed" | "planned",
+): void {
+  const where = and(eq(planItems.planId, planId), eq(planItems.courseId, courseId));
+  if (part === 2) {
+    db.update(planItems).set({ secondStatus: status }).where(where).run();
+  } else {
+    // In an UPDATE, the right-hand side reads the row's OLD values, so the
+    // second status is pinned before the first one changes.
+    db.update(planItems)
+      .set({
+        status,
+        secondStatus: sql`coalesce(${planItems.secondStatus}, ${planItems.status})`,
+      })
+      .where(where)
+      .run();
+  }
+}
+
 /** Re-file an existing plan item under a different semester without
  *  touching its completed/planned status. */
 export function moveToSemester(planId: number, courseId: number, semester: string | null): void {
@@ -127,8 +205,8 @@ export function moveToSemester(planId: number, courseId: number, semester: strin
     .run();
 }
 
-export { semesterOptions, studyPlanBySemester };
-export type { ChosenItem, SemesterGroup };
+export { canStartIn, everySemester, FULL_TIME_LOAD, INTAKES, isTwoSemester, semesterOptions, semesterUnits, startSemesters, studyPlanBySemester, unitsPerSemester };
+export type { ChosenItem, SemesterGroup, SemesterRow };
 
 export function removeFromPlan(planId: number, courseId: number): void {
   db.delete(planItems)
@@ -150,6 +228,10 @@ export function planProgress(plan: Plan): {
    *  a specialisation's floor checks into its own umbrella category (rather
    *  than giving the floor a disconnected box of its own) looks it up here. */
   specialisationIdByKey: Map<string, number | null>;
+  /** The floors that are a LEVEL minimum ("at least 12 units of 8000-level
+   *  courses"), by key. RequirementProgress doesn't carry the level filter,
+   *  so a page that treats these minimums specially looks them up here. */
+  levelFloorKeys: Set<string>;
 } {
   const catalogue = listCourses();
   const byId = new Map(catalogue.map((course) => [course.id, course]));
@@ -161,14 +243,36 @@ export function planProgress(plan: Plan): {
     catalogue,
     allRequirements,
     poolRows,
-    items.map((item) => ({ courseId: item.courseId, status: item.status })),
+    items.map((item) => {
+      const course = byId.get(item.courseId);
+      if (!course || !isTwoSemester(course)) {
+        return { courseId: item.courseId, status: item.status };
+      }
+      // Each semester of a two-semester course is half its units, completed
+      // or not on its own. A null second status means "same as the first".
+      const half = course.units / 2;
+      const second = item.secondStatus ?? item.status;
+      const completedUnits =
+        (item.status === "completed" ? half : 0) + (second === "completed" ? half : 0);
+      return { courseId: item.courseId, status: item.status, completedUnits };
+    }),
     plan.specialisationId,
   );
 
   const chosen: ChosenItem[] = items
     .flatMap((item) => {
       const course = byId.get(item.courseId);
-      return course ? [{ course, status: item.status, semester: item.semester }] : [];
+      if (!course) return [];
+      return [
+        {
+          course,
+          status: item.status,
+          semester: item.semester,
+          ...(isTwoSemester(course)
+            ? { secondStatus: item.secondStatus ?? item.status }
+            : {}),
+        },
+      ];
     })
     .sort((a, b) => a.course.code.localeCompare(b.course.code));
 
@@ -183,22 +287,15 @@ export function planProgress(plan: Plan): {
     allRequirements.map((requirement) => [requirement.key, requirement.specialisationId]),
   );
 
-  return { progress, chosen, poolsByKey, specialisationIdByKey };
+  const levelFloorKeys = new Set(
+    allRequirements
+      .filter((requirement) => requirement.kind === "floor" && requirement.minLevel !== null)
+      .map((requirement) => requirement.key),
+  );
+
+  return { progress, chosen, poolsByKey, specialisationIdByKey, levelFloorKeys };
 }
 
-/** For one requirement, the courses in its pool not already in the plan —
- *  what "ANU Course Planner" offers to add under that category. Sorted by
- *  code, same as everywhere else courses are listed. */
-export function availableForRequirement(
-  requirement: Pick<RequirementProgress, "key">,
-  catalogue: Course[],
-  poolsByKey: Map<string, ReturnType<typeof resolvePool>>,
-  chosenIds: Set<number>,
-): Course[] {
-  const pool = poolsByKey.get(requirement.key) ?? new Set<number>();
-  return catalogue
-    .filter((course) => pool.has(course.id) && !chosenIds.has(course.id))
-    .sort((a, b) => a.code.localeCompare(b.code));
-}
+export { availableForRequirement } from "./course-planner";
 
 

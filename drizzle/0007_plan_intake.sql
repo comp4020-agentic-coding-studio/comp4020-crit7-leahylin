@@ -1,0 +1,1 @@
+ALTER TABLE `plans` ADD `intake` text DEFAULT '2025 Semester 1' NOT NULL;

@@ -124,6 +124,11 @@ export const plans = sqliteTable("plans", {
   // Which specialisation this plan has declared, if any. Same nullability
   // constraint as above.
   specialisationId: int("specialisation_id").references(() => specialisations.id),
+  // The semester the student starts in: "2025 Semester 1" or "2025
+  // Semester 2" (see INTAKES in semester.ts). Which semesters the plan can
+  // use follows from it. The default is what every plan made before this
+  // column existed was planned against, so existing rows need no backfill.
+  intake: text().notNull().default("2025 Semester 1"),
 });
 
 export const planItems = sqliteTable(
@@ -145,6 +150,13 @@ export const planItems = sqliteTable(
     // stays a small, sortable set of strings despite the column being plain
     // text — no enum, because the set of valid values shifts every year.
     semester: text(),
+    // For a course taken over two consecutive semesters (COMP8715), the
+    // status of its SECOND semester; `status` is then its first. Each half
+    // is completed on its own, so finishing the first doesn't mean the
+    // second is done. Null means "same as status" — which is exactly what
+    // every row written before this column existed meant — so old rows need
+    // no backfill. Always null for an ordinary one-semester course.
+    secondStatus: text("second_status", { enum: ["completed", "planned"] }),
   },
   // A course sits in a plan once; adding it again changes its status
   // rather than stacking up duplicate units.

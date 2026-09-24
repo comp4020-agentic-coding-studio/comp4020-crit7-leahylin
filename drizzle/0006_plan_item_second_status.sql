@@ -1,0 +1,1 @@
+ALTER TABLE `plan_items` ADD `second_status` text;
