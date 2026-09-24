@@ -815,6 +815,25 @@ describe("a specialisation with several rules gets one box, a dropdown per part"
     expect(core).not.toContain("8000 level courses");
   });
 
+  it("splits Data Science into its compulsory courses and its elective list, as Programs and Courses does", async () => {
+    const planner = await declared("Data Science");
+    expect(groups(planner)).toBe(1);
+    const compulsory = between(planner, 'id="cat-dtsc-compulsory"', "</section>");
+    const elective = between(planner, 'id="cat-dtsc-elective"', "</section>");
+    expect(compulsory).toContain("Compulsory courses");
+    expect(compulsory).toContain("18 units from completion of the following compulsory courses.");
+    expect(elective).toContain("6 units from completion of courses from the following list.");
+    for (const code of ["COMP6240", "COMP8410", "COMP8430"]) {
+      expect(offers(compulsory, code), code).toBe(true);
+      expect(offers(elective, code), code).toBe(false);
+    }
+    for (const code of ["COMP6490", "COMP6670", "COMP8600", "COMP8650", "COMP8880", "STAT6039"]) {
+      expect(offers(elective, code), code).toBe(true);
+      expect(offers(compulsory, code), code).toBe(false);
+    }
+    expect(planner).not.toContain('id="cat-dtsc-courses"');
+  });
+
   it("leaves a one-rule specialisation (Machine Learning) in its own ordinary box", async () => {
     const planner = await declared("Machine Learning");
     expect(groups(planner)).toBe(0);

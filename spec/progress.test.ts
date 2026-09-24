@@ -634,6 +634,19 @@ describe("every specialisation's own shape", () => {
     expect(full.satisfied).toBe(true);
   });
 
+  it("fills Data Science's two blocks separately: compulsory courses, then one elective", () => {
+    const DTSC = specialisationId.get("data-science") ?? 0;
+    const result = run(plan("COMP6240", "COMP8410", "COMP8430", "COMP8600"), DTSC);
+    expect(result.get("dtsc-compulsory").countedCodes).toEqual(["COMP6240", "COMP8410", "COMP8430"]);
+    expect(result.get("dtsc-elective").countedCodes).toEqual(["COMP8600"]);
+    expect(result.get("dtsc-elective").satisfied).toBe(true);
+    // Three of the four are 8000-level: 18 units against the 12 required.
+    expect(result.get("dtsc-min-8000").countedUnits).toBe(18);
+    // An elective doesn't fill the compulsory block.
+    const noCore = run(plan("COMP8600", "COMP8650"), DTSC);
+    expect(noCore.get("dtsc-compulsory").countedUnits).toBe(0);
+  });
+
   it("scopes each specialisation's 8000-level floor to its own courses", () => {
     // COMP8260 is an 8000-level compulsory core course of the PROGRAM, and
     // must not help any specialisation meet its internal minimum.

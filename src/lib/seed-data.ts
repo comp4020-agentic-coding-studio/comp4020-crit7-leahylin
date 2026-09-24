@@ -353,27 +353,28 @@ export const REQUIREMENTS: SeedRequirement[] = [
   },
 
   // --- Data Science (DTSC-SPEC), 24 units ------------------------------
-  {
-    key: "dtsc-courses",
-    label: "Specialisation: data science courses",
-    detail: "24 units made up of the compulsory courses below plus 6 units of elective.",
-    specialisation: "data-science",
-    requiredUnits: 24,
-    sortOrder: 31,
-    include: [
-      "COMP6240", "COMP8410", "COMP8430",
-      "COMP6490", "COMP6670", "COMP8600", "COMP8650", "COMP8880", "STAT6039",
-    ],
-  },
+  //   https://programsandcourses.anu.edu.au/2025/specialisation/dtsc-spec
+  // Two blocks, as the page sets them out: 18 units of compulsory courses
+  // and 6 units from an elective list. (This was once one 24-unit list with
+  // the compulsory courses as a floor inside it, key "dtsc-courses"; the
+  // seed now deletes that row from a database that still has it.)
   {
     key: "dtsc-compulsory",
-    label: "Specialisation: compulsory core",
+    label: "Specialisation: compulsory courses",
     detail: "18 units from completion of the following compulsory courses.",
     specialisation: "data-science",
-    kind: "floor",
     requiredUnits: 18,
-    sortOrder: 32,
+    sortOrder: 31,
     include: ["COMP6240", "COMP8410", "COMP8430"],
+  },
+  {
+    key: "dtsc-elective",
+    label: "Specialisation: elective",
+    detail: "6 units from completion of courses from the following list.",
+    specialisation: "data-science",
+    requiredUnits: 6,
+    sortOrder: 32,
+    include: ["COMP6490", "COMP6670", "COMP8600", "COMP8650", "COMP8880", "STAT6039"],
   },
   {
     key: "dtsc-min-8000",

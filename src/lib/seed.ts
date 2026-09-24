@@ -1,4 +1,4 @@
-import { inArray, sql } from "drizzle-orm";
+import { inArray, notInArray, sql } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import {
   courses,
@@ -195,6 +195,15 @@ export function seed(db: BetterSQLite3Database): void {
         }
       }
     }
+
+    // A requirement no longer in seed-data.ts is removed, and its pool rows
+    // with it (ON DELETE CASCADE). Without this, a rule taken out of the
+    // data would live on in every existing database: its pool rows are
+    // dropped below with everyone else's, and a requirement with no pool is
+    // an open one, so it would silently start counting every course. No user
+    // data points at a requirement, so nothing of theirs goes with it.
+    const seededKeys = REQUIREMENTS.map((requirement) => requirement.key);
+    tx.delete(requirements).where(notInArray(requirements.key, seededKeys)).run();
 
     // Rebuilt, not upserted: a pool row's columns are its whole identity,
     // so an upsert can add a course to a pool but never remove one.
