@@ -1,9 +1,13 @@
 ---
 import {
+  type ChosenItem,
+  availableForRequirement,
   getPlan,
   listCourses,
   listSpecialisations,
   planProgress,
+  semesterOptions,
+  studyPlanBySemester,
 } from "../../lib/db";
 import "../../styles.css";
 
@@ -13,22 +17,24 @@ if (!plan) {
   return new Response("No such plan", { status: 404 });
 }
 
-const { progress, chosen } = planProgress(plan);
+const { progress, chosen, poolsByKey } = planProgress(plan);
 const catalogue = listCourses();
 const chosenIds = new Set(chosen.map((item) => item.course.id));
-const available = catalogue.filter((course) => !chosenIds.has(course.id));
-
-// Group the add-a-course menu the way the catalogue reads.
-const subjects = [...new Set(available.map((course) => course.subject))].sort();
+const semesters = semesterOptions();
+const semesterGroups = studyPlanBySemester(chosen);
 
 const total = progress.requirements.find((r) => r.kind === "total");
-const structural = progress.requirements.filter((r) => r.kind !== "total");
+// Every non-total requirement doubles as a Course Planner category: its own
+// pool, its own "what's left to add" selector. Whether the engine treats it
+// as allocating, a floor, or a cap is invisible here — adding a course is
+// the same action regardless of which kind of rule is filling up behind it.
+const categories = progress.requirements.filter((r) => r.kind !== "total");
 
 const allSpecialisations = listSpecialisations();
 const declared = allSpecialisations.find((s) => s.id === plan.specialisationId);
 
 // With no specialisation declared, 24 of the degree's 96 units have no rules
-// attached, so the panel below genuinely cannot account for them. Say so
+// attached, so Degree Progress genuinely cannot account for them. Say so
 // rather than let a reader infer the requirements shown are all of them.
 const unaccounted = progress.specialisationModelled ? 0 : 24;
 
@@ -38,6 +44,17 @@ function verdict(r: (typeof progress.requirements)[number]): string {
   if (r.onTrack) return "on track";
   if (r.countedUnits > 0) return "started";
   return "not started";
+}
+
+function semesterLabel(semester: string | null): string {
+  return semester ?? "Not yet scheduled";
+}
+
+// aria-labelledby is a space-separated list of ids, so an id built from a
+// label containing spaces ("sem-2026 Semester 1") is silently parsed as
+// three ids, none of which exist, and the section loses its accessible name.
+function semesterSlug(semester: string | null): string {
+  return (semester ?? "none").toLowerCase().replaceAll(/\s+/g, "-");
 }
 ---
 
@@ -60,10 +77,186 @@ function verdict(r: (typeof progress.requirements)[number]): string {
         completed, {progress.plannedUnits} planned, {progress.totalUnits} in total.
       </p>
 
+      <h2>ANU Course Planner</h2>
+      <p class="note">
+        Browse the degree's own categories and add a course to your study
+        plan from whichever one it belongs to.
+      </p>
+
+      <section aria-labelledby="specialisation-heading" class="bucket">
+        <h3 id="specialisation-heading">Specialisation</h3>
+        <p class="rule">
+          One specialisation is a compulsory part of the Master of Computing,
+          worth 24 of its 96 units. Declaring one brings its own categories
+          into this section.
+        </p>
+        <form method="post" action="/api/plan-specialisation" class="stack">
+          <input type="hidden" name="slug" value={plan.slug} />
+          <label for="specialisationId">Declared specialisation</label>
+          <select id="specialisationId" name="specialisationId">
+            <option value="">None declared</option>
+            {
+              allSpecialisations.map((specialisation) => (
+                <option
+                  value={specialisation.id}
+                  selected={specialisation.id === plan.specialisationId}
+                >
+                  {specialisation.label}
+                  {specialisation.code ? ` (${specialisation.code})` : ""}
+                  {specialisation.modelled ? "" : " — requirements not yet modelled"}
+                </option>
+              ))
+            }
+          </select>
+          <button>Declare</button>
+        </form>
+        {
+          declared && !declared.modelled && (
+            <p class="warn">
+              <strong>{declared.label}</strong> is declared, but its
+              requirements aren't modelled in this app — ANU's 2025 page for
+              it couldn't be sourced, so seeding rules would have meant
+              inventing them. Its 24 units are counted in the total but
+              checked against nothing here.
+            </p>
+          )
+        }
+        {
+          !declared && (
+            <p class="warn">
+              No specialisation declared, so 24 of the 96 units have no
+              categories here yet, and Degree Progress can only account for
+              {" "}{96 - unaccounted} units.
+            </p>
+          )
+        }
+      </section>
+
+      {
+        categories.map((requirement) => {
+          const options = availableForRequirement(
+            requirement,
+            catalogue,
+            poolsByKey,
+            chosenIds,
+          );
+          const selectId = `add-${requirement.key}`;
+          const semesterId = `${selectId}-semester`;
+          return (
+            <section aria-labelledby={`cat-${requirement.key}`} class="bucket">
+              <h3 id={`cat-${requirement.key}`}>
+                {requirement.label}
+                {requirement.kind === "floor" && (
+                  <span class="kindtag">minimum, not an allocation</span>
+                )}
+                {requirement.kind === "cap" && (
+                  <span class="kindtag">maximum — stay under this</span>
+                )}
+              </h3>
+              {requirement.detail && <p class="rule">{requirement.detail}</p>}
+              {options.length === 0 ? (
+                <p class="note">Every course in this category is already in your plan.</p>
+              ) : (
+                <form method="post" action="/api/plan-items" class="picker">
+                  <input type="hidden" name="slug" value={plan.slug} />
+                  <label for={selectId}>Add a course</label>
+                  <select id={selectId} name="courseId" required>
+                    {options.map((course) => (
+                      <option value={course.id}>
+                        {course.code} — {course.title} ({course.units}u)
+                      </option>
+                    ))}
+                  </select>
+                  <label for={semesterId}>Semester</label>
+                  <select id={semesterId} name="semester">
+                    <option value="">Not yet scheduled</option>
+                    {semesters.map((semester) => (
+                      <option value={semester}>{semester}</option>
+                    ))}
+                  </select>
+                  <fieldset>
+                    <legend>Status</legend>
+                    <label>
+                      <input type="radio" name="status" value="completed" checked /> Completed
+                    </label>
+                    <label>
+                      <input type="radio" name="status" value="planned" /> Planned
+                    </label>
+                  </fieldset>
+                  <button>Add</button>
+                </form>
+              )}
+            </section>
+          );
+        })
+      }
+
+      <h2>My Study Plan</h2>
+      {
+        chosen.length === 0 ? (
+          <p>Nothing added yet — pick a course above to start your plan.</p>
+        ) : (
+          semesterGroups.map(({ semester, items }) => (
+            <section aria-labelledby={`sem-${semesterSlug(semester)}`} class="bucket">
+              <h3 id={`sem-${semesterSlug(semester)}`}>{semesterLabel(semester)}</h3>
+              <ul class="chosen">
+                {items.map(({ course, status }: ChosenItem) => (
+                  <li>
+                    <span class="code">{course.code}</span>
+                    <span class="title">{course.title}</span>
+                    <span class="units">{course.units}u</span>
+                    <span class:list={["status", status]}>{status}</span>
+                    <form method="post" action="/api/plan-items" class="inline">
+                      <input type="hidden" name="slug" value={plan.slug} />
+                      <input type="hidden" name="courseId" value={course.id} />
+                      <input
+                        type="hidden"
+                        name="status"
+                        value={status === "completed" ? "planned" : "completed"}
+                      />
+                      <input type="hidden" name="semester" value={semester ?? ""} />
+                      <button>
+                        Mark {course.code} as {status === "completed" ? "planned" : "completed"}
+                      </button>
+                    </form>
+                    <form method="post" action="/api/plan-items" class="inline">
+                      <input type="hidden" name="slug" value={plan.slug} />
+                      <input type="hidden" name="courseId" value={course.id} />
+                      <input type="hidden" name="action" value="move" />
+                      <label class="sr-only" for={`move-${course.id}`}>
+                        Move {course.code} to semester
+                      </label>
+                      <select id={`move-${course.id}`} name="semester">
+                        <option value="" selected={semester === null}>
+                          Not yet scheduled
+                        </option>
+                        {semesters.map((option) => (
+                          <option value={option} selected={option === semester}>
+                            {option}
+                          </option>
+                        ))}
+                      </select>
+                      <button>Move</button>
+                    </form>
+                    <form method="post" action="/api/plan-items" class="inline">
+                      <input type="hidden" name="slug" value={plan.slug} />
+                      <input type="hidden" name="courseId" value={course.id} />
+                      <input type="hidden" name="action" value="remove" />
+                      <button>Remove {course.code}</button>
+                    </form>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ))
+        )
+      }
+
+      <h2>Degree Progress</h2>
       {
         total && (
           <section aria-labelledby="req-total" class:list={["bucket", { over: total.exceeded }]}>
-            <h2 id="req-total">{total.label}</h2>
+            <h3 id="req-total">{total.label}</h3>
             <p class="bar">
               <progress
                 id="prog-total"
@@ -85,54 +278,8 @@ function verdict(r: (typeof progress.requirements)[number]): string {
           </section>
         )
       }
-
-      <h2>Specialisation</h2>
-      <p class="note">
-        One specialisation is a compulsory part of the Master of Computing, and
-        it is worth 24 of the 96 units. Declaring one brings its own
-        requirements into the panel below.
-      </p>
-      <form method="post" action="/api/plan-specialisation" class="stack">
-        <input type="hidden" name="slug" value={plan.slug} />
-        <label for="specialisationId">Declared specialisation</label>
-        <select id="specialisationId" name="specialisationId">
-          <option value="">None declared</option>
-          {
-            allSpecialisations.map((specialisation) => (
-              <option value={specialisation.id} selected={specialisation.id === plan.specialisationId}>
-                {specialisation.label}
-                {specialisation.code ? ` (${specialisation.code})` : ""}
-                {specialisation.modelled ? "" : " — requirements not yet modelled"}
-              </option>
-            ))
-          }
-        </select>
-        <button>Declare</button>
-      </form>
       {
-        declared && !declared.modelled && (
-          <p class="warn">
-            <strong>{declared.label}</strong> is declared, but its requirements
-            aren't modelled in this app — ANU's 2025 page for it couldn't be
-            sourced, so seeding rules would have meant inventing them. Its 24
-            units are counted in the total below but checked against nothing.
-            Professional Computing is the one specialisation modelled in full.
-          </p>
-        )
-      }
-      {
-        !declared && (
-          <p class="warn">
-            No specialisation declared, so 24 of the 96 units have no
-            requirements attached and the panel below can only account for
-            {" "}{96 - unaccounted} units.
-          </p>
-        )
-      }
-
-      <h2>Requirements</h2>
-      {
-        structural.map((requirement) => (
+        categories.map((requirement) => (
           <section aria-labelledby={`req-${requirement.key}`} class="bucket">
             <h3 id={`req-${requirement.key}`}>
               {requirement.label}
@@ -196,73 +343,6 @@ function verdict(r: (typeof progress.requirements)[number]): string {
               count toward the total and the 8000-level floor.
             </p>
           </section>
-        )
-      }
-
-      <h2>Courses in this plan</h2>
-      {
-        chosen.length === 0 ? (
-          <p>Nothing added yet.</p>
-        ) : (
-          <ul class="chosen">
-            {chosen.map(({ course, status }) => (
-              <li>
-                <span class="code">{course.code}</span>
-                <span class="title">{course.title}</span>
-                <span class="units">{course.units}u</span>
-                <span class:list={["status", status]}>{status}</span>
-                <form method="post" action="/api/plan-items" class="inline">
-                  <input type="hidden" name="slug" value={plan.slug} />
-                  <input type="hidden" name="courseId" value={course.id} />
-                  <input
-                    type="hidden"
-                    name="status"
-                    value={status === "completed" ? "planned" : "completed"}
-                  />
-                  <button>
-                    Mark {course.code} as {status === "completed" ? "planned" : "completed"}
-                  </button>
-                </form>
-                <form method="post" action="/api/plan-items" class="inline">
-                  <input type="hidden" name="slug" value={plan.slug} />
-                  <input type="hidden" name="courseId" value={course.id} />
-                  <input type="hidden" name="action" value="remove" />
-                  <button>Remove {course.code}</button>
-                </form>
-              </li>
-            ))}
-          </ul>
-        )
-      }
-
-      <h2>Add a course</h2>
-      {
-        available.length === 0 ? (
-          <p>Every course in the catalogue is already in this plan.</p>
-        ) : (
-          <form method="post" action="/api/plan-items" class="stack">
-            <input type="hidden" name="slug" value={plan.slug} />
-            <label for="courseId">Course</label>
-            <select id="courseId" name="courseId" required>
-              {subjects.map((subject) => (
-                <optgroup label={subject}>
-                  {available
-                    .filter((course) => course.subject === subject)
-                    .map((course) => (
-                      <option value={course.id}>
-                        {course.code} — {course.title} ({course.units}u)
-                      </option>
-                    ))}
-                </optgroup>
-              ))}
-            </select>
-            <fieldset>
-              <legend>Status</legend>
-              <label><input type="radio" name="status" value="completed" checked /> Completed</label>
-              <label><input type="radio" name="status" value="planned" /> Planned</label>
-            </fieldset>
-            <button>Add to plan</button>
-          </form>
         )
       }
     </main>

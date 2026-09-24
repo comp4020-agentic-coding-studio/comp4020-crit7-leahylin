@@ -150,9 +150,10 @@ export type ChosenItem = {
 export function planProgress(plan: Plan): {
   progress: PlanProgress;
   chosen: ChosenItem[];
-  /** Every requirement's own candidate pool, resolved once here so the page
-   *  and the category-selector helper below don't each recompute it. */
-  poolsByRequirement: Map<number, ReturnType<typeof resolvePool>>;
+  /** Every requirement's own candidate pool, keyed by the requirement's
+   *  natural key (RequirementProgress carries the key, not the numeric id,
+   *  so this is what a page can actually look a pool up by). */
+  poolsByKey: Map<string, ReturnType<typeof resolvePool>>;
 } {
   const catalogue = listCourses();
   const byId = new Map(catalogue.map((course) => [course.id, course]));
@@ -175,26 +176,26 @@ export function planProgress(plan: Plan): {
     })
     .sort((a, b) => a.course.code.localeCompare(b.course.code));
 
-  const poolsByRequirement = new Map(
+  const poolsByKey = new Map(
     allRequirements.map((requirement) => [
-      requirement.id,
+      requirement.key,
       resolvePool(requirement, catalogue, poolRows),
     ]),
   );
 
-  return { progress, chosen, poolsByRequirement };
+  return { progress, chosen, poolsByKey };
 }
 
 /** For one requirement, the courses in its pool not already in the plan —
  *  what "ANU Course Planner" offers to add under that category. Sorted by
  *  code, same as everywhere else courses are listed. */
 export function availableForRequirement(
-  requirement: RequirementProgress & { id: number },
+  requirement: Pick<RequirementProgress, "key">,
   catalogue: Course[],
-  poolsByRequirement: Map<number, ReturnType<typeof resolvePool>>,
+  poolsByKey: Map<string, ReturnType<typeof resolvePool>>,
   chosenIds: Set<number>,
 ): Course[] {
-  const pool = poolsByRequirement.get(requirement.id) ?? new Set<number>();
+  const pool = poolsByKey.get(requirement.key) ?? new Set<number>();
   return catalogue
     .filter((course) => pool.has(course.id) && !chosenIds.has(course.id))
     .sort((a, b) => a.code.localeCompare(b.code));
