@@ -50,6 +50,10 @@ export type PlannerBlock =
       /** The overall list's own rule ("24 units drawn from the two lists
        *  below"), which describes the whole box rather than one part. */
       rule: string | null;
+      /** A level minimum that has stopped courses below its level being
+       *  offered: said once for the whole box, since it applies to every
+       *  part of it alike. */
+      limit: Headroom<Course>["limiting"][number] | null;
       views: (CategoryView & { label: string })[];
     };
 
@@ -107,6 +111,15 @@ export function plannerBlocks(input: PlannerInput): PlannerBlock[] {
   // no pool to add from: it measures what the other categories hold, and
   // Degree Progress already says whether it's met. It gets no box.
   const plannerCategories = visible.filter((requirement) => requirement.kind !== "floor");
+
+  // Each specialisation's level minimums ("12 units of 8000-level"), by
+  // specialisation, for every one of its categories to respect.
+  const levelFloorsBySpecialisation = new Map<number, RequirementProgress[]>();
+  for (const requirement of categories) {
+    const id = specialisationIdByKey.get(requirement.key);
+    if (id == null || requirement.kind !== "floor" || !levelFloorKeys.has(requirement.key)) continue;
+    levelFloorsBySpecialisation.set(id, [...(levelFloorsBySpecialisation.get(id) ?? []), requirement]);
+  }
   type Category = RequirementProgress;
 
   /** Everything one category renders. `hidden` is courses offered by a
@@ -141,9 +154,14 @@ export function plannerBlocks(input: PlannerInput): PlannerBlock[] {
     // Once that is used up, stop offering courses that would take the
     // minimum out of reach. See src/lib/floor-headroom.ts.
     const specialisationId = specialisationIdByKey.get(requirement.key);
-    const levelFloors = foldedFloors.filter((floor) =>
-      levelFloorKeys.has(floor.key),
-    );
+    // The specialisation's level minimums, whichever of its categories they
+    // were folded into: they're about all of its units, so every part of
+    // its box has to leave room for them, not just the part they sit under.
+    // (Computational Foundations: two 6000-level courses from its theory
+    // list and its foundations list together use up the 12 units allowed
+    // below 8000 level, so both lists offer only 8000-level courses after.)
+    const levelFloors =
+      specialisationId == null ? [] : (levelFloorsBySpecialisation.get(specialisationId) ?? []);
     const siblings = progress.requirements.filter(
       (other) =>
         other.kind === "allocating" &&
@@ -262,7 +280,13 @@ export function plannerBlocks(input: PlannerInput): PlannerBlock[] {
         key: String(id),
         title: `Specialisation: ${specialisationLabel(id) ?? "courses"}`,
         rule: boxRules.length > 0 ? boxRules.join(" ") : null,
-        views,
+        // The level minimum is the specialisation's, so each part reports the
+        // same thing: say it once at the top, and not again in each part.
+        limit: views.flatMap((view) => view.headroom.limiting)[0] ?? null,
+        views: views.map((view) => ({
+          ...view,
+          headroom: { ...view.headroom, limiting: [] },
+        })),
       });
     }
   }

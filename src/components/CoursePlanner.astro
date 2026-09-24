@@ -127,6 +127,14 @@ const lastSemester = semesters[semesters.length - 1];
       >
         <h3 id={`spec-${block.key}`}>{block.title}</h3>
         {block.rule && <p class="rule">{block.rule}</p>}
+        {block.limit && (
+          <p class="limit">
+            {block.limit.unitsOutside} units of this specialisation are already
+            below 8000 level, and at most {block.limit.limit} can be, because it
+            needs at least {block.limit.floor.requiredUnits} units at 8000 level.
+            Only 8000-level courses are offered below.
+          </p>
+        )}
         {block.views.map((view) => (
           <section
             aria-labelledby={`cat-${view.requirement.key}`}

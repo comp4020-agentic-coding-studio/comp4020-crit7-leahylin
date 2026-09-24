@@ -509,6 +509,62 @@ describe("COMP8715 runs over two consecutive semesters; COMP8830 over one", () =
   });
 });
 
+describe("a level minimum holds across every part of a specialisation's box", () => {
+  // Computational Foundations: a theory list (at least 12 units) and a
+  // foundations list (at most 12), and 12 of its 24 units at 8000 level —
+  // so at most 12 below it, counting BOTH lists together.
+  async function cfndPlan(): Promise<string> {
+    const res = await post(
+      "/api/plans",
+      new URLSearchParams({ label: `cfnd probe ${process.hrtime.bigint()}` }),
+    );
+    const location = res.headers.get("location");
+    if (!location) throw new Error("plan creation did not redirect");
+    const slug = location.replace(/^\/plan\//, "").replace(/\/$/, "");
+    const start = await planHtml(slug);
+    const id = /<option value="(\d+)"[^>]*>\s*Computational Foundations/.exec(start)?.[1];
+    if (!id) throw new Error("Computational Foundations not found");
+    await post("/api/plan-specialisation", new URLSearchParams({ slug, specialisationId: id }));
+    return slug;
+  }
+  const add = async (slug: string, code: string) => {
+    const courseId = courseIdFor(await planHtml(slug), code);
+    await post("/api/plan-items", new URLSearchParams({ slug, courseId, status: "planned" }));
+  };
+  const parts = async (slug: string) => {
+    const planner = between(await planHtml(slug), "ANU Course Planner</h2>", "My Study Plan</h2>");
+    return {
+      theory: between(planner, 'id="cat-cfnd-courses"', "</section>"),
+      foundations: between(planner, 'id="cat-cfnd-list-b"', "</section>"),
+    };
+  };
+
+  it("still offers courses below 8000 level in both lists after one of them", async () => {
+    const slug = await cfndPlan();
+    await add(slug, "COMP6361");
+    const { theory, foundations } = await parts(slug);
+    expect(theory).toContain("COMP6363 —");
+    expect(foundations).toContain("COMP6261 —");
+  });
+
+  it("offers only 8000-level courses in BOTH lists once one from each uses up the 12 units", async () => {
+    const slug = await cfndPlan();
+    await add(slug, "COMP6361"); // theory list, 6000-level
+    await add(slug, "COMP6261"); // foundations list, 6000-level
+    const { theory, foundations } = await parts(slug);
+    for (const code of ["COMP6363", "MATH6114"]) expect(theory, code).not.toContain(`${code} —`);
+    for (const code of ["COMP8011", "COMP8460", "MATH8343"]) expect(theory, code).toContain(`${code} —`);
+    for (const code of ["COMP6262", "COMP6466"]) expect(foundations, code).not.toContain(`${code} —`);
+    expect(foundations).toContain("COMP8712 —");
+    // Why, said once at the top of the box rather than in each part.
+    const planner = between(await planHtml(slug), "ANU Course Planner</h2>", "My Study Plan</h2>");
+    const box = between(planner, 'class="bucket spec-group"', 'id="cat-cfnd-courses"');
+    expect(box).toContain('class="limit"');
+    expect(theory).not.toContain('class="limit"');
+    expect(foundations).not.toContain('class="limit"');
+  });
+});
+
 describe("an allocating or cap category hides its picker once full", () => {
   let slug: string;
 
