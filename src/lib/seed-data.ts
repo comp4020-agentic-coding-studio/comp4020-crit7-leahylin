@@ -32,6 +32,13 @@ export const COURSES: SeedCourse[] = [
   { code: "COMP8260", title: "Professional Practice: Responsible Innovation & Leadership", units: 6 },
   { code: "COMP6260", title: "Foundations of Computing", units: 6 },
   { code: "MATH6005", title: "Discrete Mathematics Models", units: 6 },
+  // An annual course: 6 units a semester, "must be completed twice, in
+  // consecutive semesters" (6+6) —
+  //   https://programsandcourses.anu.edu.au/2025/course/COMP8715
+  // Seeded as ONE 12-unit entry, because that is what the degree's rules
+  // count (the project requirement is 12 units from COMP8715 or COMP8830),
+  // and listed in TWO_SEMESTER_COURSES below so the study plan spreads it
+  // over the two semesters it actually runs in.
   { code: "COMP8715", title: "Advanced Computing Team Project", units: 12 },
   { code: "COMP8830", title: "Computing Internship", units: 12 },
 
@@ -517,6 +524,14 @@ export const REQUIREMENTS: SeedRequirement[] = [
     maxLevel: 8999,
   },
 ];
+
+/** Courses taken as one enrolment over two consecutive semesters, half the
+ *  units in each. Reference data like everything above, but it only shapes
+ *  the study plan's semesters, not what counts, so it lives here rather than
+ *  in a database column. COMP8830 (Computing Internship, 12 units) is NOT
+ *  one: it is a single-semester course —
+ *    https://programsandcourses.anu.edu.au/2025/course/COMP8830 */
+export const TWO_SEMESTER_COURSES: ReadonlySet<string> = new Set(["COMP8715"]);
 
 // The invariants in spec/ fetch every route in spec/routes.ts against a
 // throwaway database and require HTTP 200, so a plan has to exist at a known
