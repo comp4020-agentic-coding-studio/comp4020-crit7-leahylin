@@ -79,16 +79,16 @@ function semesterSlug(semester: string | null): string {
 
       <h2>ANU Course Planner</h2>
       <p class="note">
-        Browse the degree's own categories and add a course to your study
-        plan from whichever one it belongs to.
+        Browse the degree's own categories and add a course to your study plan
+        from whichever one it belongs to.
       </p>
 
       <section aria-labelledby="specialisation-heading" class="bucket">
         <h3 id="specialisation-heading">Specialisation</h3>
         <p class="rule">
           One specialisation is a compulsory part of the Master of Computing,
-          worth 24 of its 96 units. Declaring one brings its own categories
-          into this section.
+          worth 24 of its 96 units. Declaring one brings its own categories into
+          this section.
         </p>
         <form method="post" action="/api/plan-specialisation" class="stack">
           <input type="hidden" name="slug" value={plan.slug} />
@@ -103,7 +103,9 @@ function semesterSlug(semester: string | null): string {
                 >
                   {specialisation.label}
                   {specialisation.code ? ` (${specialisation.code})` : ""}
-                  {specialisation.modelled ? "" : " — requirements not yet modelled"}
+                  {specialisation.modelled
+                    ? ""
+                    : " — requirements not yet modelled"}
                 </option>
               ))
             }
@@ -114,10 +116,10 @@ function semesterSlug(semester: string | null): string {
           declared && !declared.modelled && (
             <p class="warn">
               <strong>{declared.label}</strong> is declared, but its
-              requirements aren't modelled in this app — ANU's 2025 page for
-              it couldn't be sourced, so seeding rules would have meant
-              inventing them. Its 24 units are counted in the total but
-              checked against nothing here.
+              requirements aren't modelled in this app — ANU's 2025 page for it
+              couldn't be sourced, so seeding rules would have meant inventing
+              them. Its 24 units are counted in the total but checked against
+              nothing here.
             </p>
           )
         }
@@ -125,8 +127,8 @@ function semesterSlug(semester: string | null): string {
           !declared && (
             <p class="warn">
               No specialisation declared, so 24 of the 96 units have no
-              categories here yet, and Degree Progress can only account for
-              {" "}{96 - unaccounted} units.
+              categories here yet, and Degree Progress can only account for{" "}
+              {96 - unaccounted} units.
             </p>
           )
         }
@@ -160,33 +162,45 @@ function semesterSlug(semester: string | null): string {
           // countedUnits >= requiredUnits means the same thing as onTrack
           // for every OTHER kind, and means "at the ceiling" for a cap,
           // which is the "full" this is actually asking about.
-          const isFull = !isFloor && requirement.countedUnits >= requirement.requiredUnits;
+          const isFull =
+            !isFloor && requirement.countedUnits >= requirement.requiredUnits;
           const options =
             isFloor || isFull
               ? []
-              : availableForRequirement(requirement, catalogue, poolsByKey, chosenIds);
+              : availableForRequirement(
+                  requirement,
+                  catalogue,
+                  poolsByKey,
+                  chosenIds,
+                );
           const selectId = `add-${requirement.key}`;
           const semesterId = `${selectId}-semester`;
           return (
             <section aria-labelledby={`cat-${requirement.key}`} class="bucket">
               <h3 id={`cat-${requirement.key}`}>
                 {requirement.label}
-                {requirement.kind === "floor" && (
-                  <span class="kindtag">minimum, not an allocation</span>
-                )}
                 {requirement.kind === "cap" && (
                   <span class="kindtag">maximum — stay under this</span>
                 )}
               </h3>
-              {requirement.detail && <p class="rule">{requirement.detail}</p>}
+              {/* A floor's full rule text and progress already live in
+                  Degree Progress below — repeating them here, on a category
+                  with no pool of its own to add from, was noise. This is
+                  just the one thing Course Planner needs to say about it:
+                  is it covered yet by what you've picked elsewhere or not. */}
               {isFloor ? (
                 <p class="note">
-                  Counted automatically from the courses you've already added to
-                  other categories above — there's no separate list to add from
-                  here.
+                  {requirement.onTrack
+                    ? "Every course in this category is already in your plan."
+                    : "Not yet met."}
                 </p>
-              ) : isFull || options.length === 0 ? (
-                <p class="note">Every course in this category is already in your plan.</p>
+              ) : (
+                requirement.detail && <p class="rule">{requirement.detail}</p>
+              )}
+              {isFloor ? null : isFull || options.length === 0 ? (
+                <p class="note">
+                  Every course in this category is already in your plan.
+                </p>
               ) : (
                 <form method="post" action="/api/plan-items" class="picker">
                   <input type="hidden" name="slug" value={plan.slug} />
@@ -208,10 +222,17 @@ function semesterSlug(semester: string | null): string {
                   <fieldset>
                     <legend>Status</legend>
                     <label>
-                      <input type="radio" name="status" value="completed" checked /> Completed
+                      <input
+                        type="radio"
+                        name="status"
+                        value="completed"
+                        checked
+                      />{" "}
+                      Completed
                     </label>
                     <label>
-                      <input type="radio" name="status" value="planned" /> Planned
+                      <input type="radio" name="status" value="planned" />{" "}
+                      Planned
                     </label>
                   </fieldset>
                   <button>Add</button>
@@ -228,8 +249,13 @@ function semesterSlug(semester: string | null): string {
           <p>Nothing added yet — pick a course above to start your plan.</p>
         ) : (
           semesterGroups.map(({ semester, items }) => (
-            <section aria-labelledby={`sem-${semesterSlug(semester)}`} class="bucket">
-              <h3 id={`sem-${semesterSlug(semester)}`}>{semesterLabel(semester)}</h3>
+            <section
+              aria-labelledby={`sem-${semesterSlug(semester)}`}
+              class="bucket"
+            >
+              <h3 id={`sem-${semesterSlug(semester)}`}>
+                {semesterLabel(semester)}
+              </h3>
               <ul class="chosen">
                 {items.map(({ course, status }: ChosenItem) => (
                   <li>
@@ -245,9 +271,14 @@ function semesterSlug(semester: string | null): string {
                         name="status"
                         value={status === "completed" ? "planned" : "completed"}
                       />
-                      <input type="hidden" name="semester" value={semester ?? ""} />
+                      <input
+                        type="hidden"
+                        name="semester"
+                        value={semester ?? ""}
+                      />
                       <button>
-                        Mark {course.code} as {status === "completed" ? "planned" : "completed"}
+                        Mark {course.code} as{" "}
+                        {status === "completed" ? "planned" : "completed"}
                       </button>
                     </form>
                     <form method="post" action="/api/plan-items" class="inline">
@@ -286,7 +317,10 @@ function semesterSlug(semester: string | null): string {
       <h2>Degree Progress</h2>
       {
         total && (
-          <section aria-labelledby="req-total" class:list={["bucket", { over: total.exceeded }]}>
+          <section
+            aria-labelledby="req-total"
+            class:list={["bucket", { over: total.exceeded }]}
+          >
             <h3 id="req-total">{total.label}</h3>
             <p class="bar">
               <progress
@@ -301,8 +335,8 @@ function semesterSlug(semester: string | null): string {
             </p>
             {total.exceeded && (
               <p class="warn">
-                Over-planned by {total.excessUnits} units — the degree is
-                {" "}{total.requiredUnits} units, so something here won't count.
+                Over-planned by {total.excessUnits} units — the degree is{" "}
+                {total.requiredUnits} units, so something here won't count.
               </p>
             )}
             {total.detail && <p class="rule">{total.detail}</p>}
@@ -320,20 +354,30 @@ function semesterSlug(semester: string | null): string {
               {requirement.kind === "cap" && (
                 <span class="kindtag">maximum — stay under this</span>
               )}
-              <span class:list={["verdict", verdict(requirement).replaceAll(" ", "-")]}>
+              <span
+                class:list={[
+                  "verdict",
+                  verdict(requirement).replaceAll(" ", "-"),
+                ]}
+              >
                 {verdict(requirement)}
               </span>
             </h3>
             <p class="bar">
               <progress
-                value={Math.min(requirement.countedUnits, requirement.requiredUnits)}
+                value={Math.min(
+                  requirement.countedUnits,
+                  requirement.requiredUnits,
+                )}
                 max={requirement.requiredUnits}
                 aria-labelledby={`req-${requirement.key}`}
               />
               <span class="figure">
                 {requirement.completedUnits} completed
-                {requirement.plannedUnits > 0 && <> + {requirement.plannedUnits} planned</>}
-                {" "}of {requirement.requiredUnits} units
+                {requirement.plannedUnits > 0 && (
+                  <> + {requirement.plannedUnits} planned</>
+                )}{" "}
+                of {requirement.requiredUnits} units
               </span>
             </p>
             {requirement.violated && (
@@ -344,19 +388,19 @@ function semesterSlug(semester: string | null): string {
               </p>
             )}
             {requirement.detail && <p class="rule">{requirement.detail}</p>}
-            {
-              requirement.countedCodes.length > 0 && (
-                <p class="counting">Counting: {requirement.countedCodes.join(", ")}</p>
-              )
-            }
+            {requirement.countedCodes.length > 0 && (
+              <p class="counting">
+                Counting: {requirement.countedCodes.join(", ")}
+              </p>
+            )}
             {
               /* The gap between what a rule could accept and what it was
                  credited is exactly the units a tighter rule claimed first. */
               requirement.kind === "allocating" &&
                 requirement.poolMatchedUnits > requirement.countedUnits && (
                   <p class="elsewhere">
-                    {requirement.poolMatchedUnits - requirement.countedUnits} more matching
-                    units are counting toward another requirement.
+                    {requirement.poolMatchedUnits - requirement.countedUnits}{" "}
+                    more matching units are counting toward another requirement.
                   </p>
                 )
             }
@@ -368,7 +412,9 @@ function semesterSlug(semester: string | null): string {
         progress.surplusUnits > 0 && (
           <section aria-labelledby="surplus" class="bucket">
             <h3 id="surplus">Not counting anywhere</h3>
-            <p class="figure">{progress.surplusUnits} units: {progress.surplusCodes.join(", ")}</p>
+            <p class="figure">
+              {progress.surplusUnits} units: {progress.surplusCodes.join(", ")}
+            </p>
             <p class="rule">
               Every requirement these could fill is already full. They still
               count toward the total and the 8000-level floor.

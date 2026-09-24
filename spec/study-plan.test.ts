@@ -203,18 +203,47 @@ describe("floor categories in the Course Planner have no picker of their own", (
     expect(category).not.toContain('class="picker"');
   });
 
-  it("gives the specialisation's own 8000-level floor no add-selector either", async () => {
+  it("gives the specialisation's own 8000-level floor no add-selector either, and says it isn't met yet", async () => {
     const html = await planHtml(slug);
     const planner = between(html, "<h2>ANU Course Planner", "<h2>My Study Plan");
     const category = between(planner, 'id="cat-pcom-min-8000"', "</section>");
     expect(category).not.toContain('class="picker"');
-    expect(category).toContain("Counted automatically");
+    // No rule text, no kind tag, no pointer to add courses from — the full
+    // explanation lives in Degree Progress. Just the one-line check.
+    expect(category).not.toContain("minimum, not an allocation");
+    expect(category).not.toContain("must consist of a minimum");
+    expect(category).toContain("Not yet met.");
+  });
+
+  it("switches that one-line check to the satisfied message once the floor is met", async () => {
+    // pcom-min-8000 requires 12 units of 8000-level courses among whatever
+    // this specialisation's OTHER categories already credited. ENGN8100
+    // (pcom-core) and COMP8600 (pcom-8000-comp) are both 8000-level and
+    // together clear it without needing a third, unrelated course.
+    const html = await planHtml(slug);
+    for (const code of ["ENGN8100", "COMP8600"]) {
+      const page = await planHtml(slug);
+      const courseId = courseIdFor(page, code);
+      await post("/api/plan-items", new URLSearchParams({ slug, courseId, status: "completed" }));
+    }
+    void html;
+
+    const after = await planHtml(slug);
+    const planner = between(after, "<h2>ANU Course Planner", "<h2>My Study Plan");
+    const category = between(planner, 'id="cat-pcom-min-8000"', "</section>");
+    expect(category).toContain("Every course in this category is already in your plan.");
+    expect(category).not.toContain("Not yet met.");
   });
 
   it("still gives every allocating and cap category its selector", async () => {
     const html = await planHtml(slug);
     const planner = between(html, "<h2>ANU Course Planner", "<h2>My Study Plan");
-    for (const key of ["mcomp-core", "pcom-core", "pcom-elective", "pcom-8000-comp"]) {
+    // pcom-8000-comp is deliberately not checked here: an earlier test in
+    // this describe block adds COMP8600, which is in ITS pool too, and
+    // fills it — correctly hidden by the same "full" rule this whole file
+    // otherwise verifies. mcomp-core is checked before any course lands in
+    // it in this describe block.
+    for (const key of ["mcomp-core", "pcom-core", "pcom-elective"]) {
       const category = between(planner, `id="cat-${key}"`, "</section>");
       expect(category, key).toContain('class="picker"');
     }
