@@ -10,6 +10,7 @@ import {
   startSemesters,
   unitsPerSemester,
 } from "../lib/semester";
+import type { Warning } from "../lib/requisites";
 import type { Plan } from "../lib/schema";
 
 interface Props {
@@ -18,8 +19,19 @@ interface Props {
   semesterGroups: SemesterGroup[];
   /** Whether the plan has any course at all. */
   empty: boolean;
+  /** Requisite and semester warnings, by course code (see requisites.ts). */
+  warnings: Record<string, Warning[]>;
 }
-const { plan, semesterGroups, empty } = Astro.props;
+const { plan, semesterGroups, empty, warnings } = Astro.props;
+// How many courses have a problem with where they sit (notes about what the
+// planner can't check don't count as a problem).
+const flagged = Object.values(warnings).filter((list) =>
+  list.some((w) => w.kind !== "note"),
+).length;
+const flaggedText =
+  flagged === 1
+    ? "1 course sits where its prerequisites or 2025 semesters say it can't: see the note on it below."
+    : `${flagged} courses sit where their prerequisites or 2025 semesters say they can't: see the notes on them below.`;
 // The column headings sit over the first semester that has a course in it.
 const firstFilled = semesterGroups.findIndex((group) => group.items.length > 0);
 
@@ -34,6 +46,12 @@ function semesterSlug(semester: string | null): string {
   return (semester ?? "none").toLowerCase().replaceAll(/\s+/g, "-");
 }
 ---
+
+{/* Said once above the semesters, so a problem further down the page isn't
+    missed; each course's own row says what it is. */}
+{flagged > 0 && (
+  <p class="warn plan-flags">{flaggedText}</p>
+)}
 
 {
   empty ? (
@@ -191,6 +209,14 @@ function semesterSlug(semester: string | null): string {
                   Remove<span class="sr-only"> {course.code}</span>
                 </button>
               </form>
+              {/* Under the whole row, not squeezed into the course column. */}
+              {(warnings[course.code] ?? []).length > 0 && (
+                <span class="req-warnings">
+                  {(warnings[course.code] ?? []).map((w) => (
+                    <span class:list={["req-warning", w.kind]}>{w.text}</span>
+                  ))}
+                </span>
+              )}
             </li>
           ))}
         </ul>

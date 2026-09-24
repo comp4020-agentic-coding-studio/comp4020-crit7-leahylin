@@ -8,6 +8,7 @@ import { plannerBlocks } from "../../lib/course-planner";
 import {
   everySemester,
   getPlan,
+  isTwoSemester,
   listCourses,
   listSpecialisations,
   planProgress,
@@ -15,6 +16,7 @@ import {
   studyPlanBySemester,
 } from "../../lib/db";
 import { expectedGraduation } from "../../lib/graduation";
+import { requisiteWarnings } from "../../lib/requisites";
 import { degreeComplete, degreeOnTrack } from "../../lib/progress";
 import "../../styles.css";
 
@@ -38,6 +40,25 @@ const semesters = semesterOptions(plan.intake);
 // Every semester, empty ones included, so a gap in the plan shows as a gap.
 const byTerm = studyPlanBySemester(chosen);
 const semesterGroups = everySemester(byTerm, plan.intake);
+
+// Each course checked against its requisites and 2025 semesters (see
+// requisites.ts): warnings, shown on its row in the study plan.
+const warnings = Object.fromEntries(
+  requisiteWarnings(
+    chosen.map((item) => ({
+      code: item.course.code,
+      subject: item.course.subject,
+      level: item.course.level,
+      units: item.course.units,
+      status:
+        item.status === "completed" && (item.secondStatus ?? item.status) === "completed"
+          ? ("completed" as const)
+          : ("planned" as const),
+      semester: item.semester,
+      twoSemester: isTwoSemester(item.course),
+    })),
+  ),
+);
 
 const blocks = plannerBlocks({
   requirements: progress.requirements,
@@ -107,7 +128,12 @@ const graduation = expectedGraduation({
       />
 
       <h2 id="study-plan">My Study Plan</h2>
-      <StudyPlan plan={plan} semesterGroups={semesterGroups} empty={chosen.length === 0} />
+      <StudyPlan
+        plan={plan}
+        semesterGroups={semesterGroups}
+        empty={chosen.length === 0}
+        warnings={warnings}
+      />
 
       <h2 id="degree-progress">Degree Progress</h2>
       <DegreeProgress progress={progress} graduation={graduation} />

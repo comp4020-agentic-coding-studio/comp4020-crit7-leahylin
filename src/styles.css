@@ -1009,6 +1009,41 @@ button.danger:focus-visible {
   display: none;
 }
 
+/* Requisite and semester warnings under a course's title. Problems with
+   the plan are marked; notes about what can't be checked are plainer. */
+.req-warnings {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  flex: 1 1 100%;
+  grid-column: 1 / -1;
+}
+
+.req-warning {
+  font-size: 0.8rem;
+  line-height: 1.35;
+  padding: 0.15rem 0.45rem;
+  border-left: 3px solid var(--anu-gold);
+  background: var(--anu-gold-tint);
+  color: var(--anu-black);
+}
+
+.req-warning::before {
+  content: "⚠ ";
+  font-weight: 700;
+}
+
+.req-warning.note {
+  background: none;
+  border-left-color: var(--line);
+  color: var(--dim);
+}
+
+.req-warning.note::before {
+  content: "ⓘ ";
+  font-weight: 400;
+}
+
 /* A two-semester course: which half this row is. */
 .chosen .part {
   font-size: 0.8rem;

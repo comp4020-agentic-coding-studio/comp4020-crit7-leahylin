@@ -1021,3 +1021,35 @@ describe("a broad category leaves a course to the named list still offering it",
     expect(elective).not.toContain("Every course");
   });
 });
+
+describe("the study plan warns about requisites and semesters", () => {
+  it("flags COMP8715 scheduled before its prerequisites, on its row and above the plan", async () => {
+    const res = await post(
+      "/api/plans",
+      new URLSearchParams({ label: `requisite probe ${process.hrtime.bigint()}` }),
+    );
+    const location = res.headers.get("location");
+    if (!location) throw new Error("plan creation did not redirect");
+    const slug = location.replace(/^\/plan\//, "").replace(/\/$/, "");
+    const page = await planHtml(slug);
+    await post("/api/plan-items", new URLSearchParams({
+      slug, courseId: courseIdFor(page, "COMP8715"), status: "planned", semester: "2025 Semester 1",
+    }));
+    const plan = between(await planHtml(slug), "My Study Plan</h2>", "Degree Progress</h2>");
+    expect(plan).toContain("Needs COMP6442 and COMP8260 in an earlier semester.");
+    expect(plan).toContain("1 course sits where its prerequisites");
+
+    // Put the prerequisites first and move the project later: no warning.
+    await post("/api/plan-items", new URLSearchParams({
+      slug, courseId: courseIdFor(page, "COMP6442"), status: "planned", semester: "2025 Semester 1",
+    }));
+    await post("/api/plan-items", new URLSearchParams({
+      slug, courseId: courseIdFor(page, "COMP8260"), status: "planned", semester: "2025 Semester 2",
+    }));
+    await post("/api/plan-items", new URLSearchParams({
+      slug, courseId: courseIdFor(page, "COMP8715"), action: "move", semester: "2026 Semester 1",
+    }));
+    const after = between(await planHtml(slug), "My Study Plan</h2>", "Degree Progress</h2>");
+    expect(after).not.toContain("Needs COMP6442 and COMP8260");
+  });
+});
