@@ -1,6 +1,8 @@
 ---
-// Degree Progress: the 96-unit total, then every requirement with its
-// standing, and anything that counts toward nothing.
+// Degree Progress: the 96-unit total first and largest, since completed
+// units toward it are what a reader comes for; then every requirement as
+// one line (name, units, standing) that opens to its bar, rule and the
+// courses counting toward it; then anything that counts toward nothing.
 import type { PlanProgress, RequirementProgress } from "../lib/progress";
 
 interface Props {
@@ -9,6 +11,22 @@ interface Props {
 const { progress } = Astro.props;
 const total = progress.requirements.find((r) => r.kind === "total");
 const categories = progress.requirements.filter((r) => r.kind !== "total");
+
+// The total's bar in two parts, completed then planned, as percentages of
+// the 96 units (the planned part stops at the end of the bar).
+const required = total?.requiredUnits ?? 96;
+const completedUnits = total?.completedUnits ?? 0;
+const plannedUnits = total?.plannedUnits ?? 0;
+const completedPct = Math.min(100, (completedUnits / required) * 100);
+const plannedPct = Math.min(100 - completedPct, (plannedUnits / required) * 100);
+const stillToPlan = Math.max(0, required - completedUnits - plannedUnits);
+
+/** "18 / 24", or "6 / max 12" for a ceiling. */
+function mini(r: RequirementProgress): string {
+  return r.kind === "cap"
+    ? `${r.countedUnits} / max ${r.requiredUnits}`
+    : `${r.countedUnits} / ${r.requiredUnits}`;
+}
 
 function verdict(r: RequirementProgress): string {
   if (r.kind === "cap") return r.violated ? "over the limit" : "within limit";
@@ -23,24 +41,24 @@ function verdict(r: RequirementProgress): string {
   total && (
     <section
       aria-labelledby="req-total"
-      class:list={[
-        "bucket",
-        "total-card",
-        `is-${total.satisfied ? "done" : total.countedUnits > 0 ? "started" : "not-started"}`,
-        { over: total.exceeded },
-      ]}
+      class:list={["bucket", "total-card", { over: total.exceeded }]}
     >
       <h3 id="req-total">{total.label}</h3>
-      <p class="bar">
-        <progress
-          id="prog-total"
-          value={Math.min(total.countedUnits, total.requiredUnits)}
-          max={total.requiredUnits}
-          aria-labelledby="req-total"
-        />
-        <span class="figure">
-          {total.countedUnits} of {total.requiredUnits} units
-        </span>
+      <p class="total-headline">
+        <strong>{completedUnits}</strong> of {required} units completed
+      </p>
+      <div
+        class="total-bar"
+        role="img"
+        aria-label={`${completedUnits} of ${required} units completed, ${plannedUnits} more planned`}
+      >
+        <span class="done" style={`width: ${completedPct}%`}></span>
+        <span class="planned" style={`width: ${plannedPct}%`}></span>
+      </div>
+      <p class="total-legend">
+        <span class="item"><span class="key done"></span>{completedUnits} completed</span>
+        <span class="item"><span class="key planned"></span>{plannedUnits} planned</span>
+        <span class="item"><span class="key rest"></span>{stillToPlan} still to plan</span>
       </p>
       {total.exceeded && (
         <p class="warn">
@@ -48,85 +66,88 @@ function verdict(r: RequirementProgress): string {
           {total.requiredUnits} units, so something here won't count.
         </p>
       )}
-      {total.detail && (
-        <details class="more">
-          <summary>Details</summary>
-          <p class="rule">{total.detail}</p>
-        </details>
-      )}
     </section>
   )
 }
+
+<p class="note req-intro">
+  Requirements — open one to see its progress and what counts toward it.
+</p>
 {
   categories.map((requirement) => (
     <section
-      aria-labelledby={`req-${requirement.key}`}
-      class:list={["bucket", `is-${verdict(requirement).replaceAll(" ", "-")}`]}
+      aria-labelledby={`req-${requirement.key} verdict-${requirement.key}`}
+      class:list={["bucket", "req", `is-${verdict(requirement).replaceAll(" ", "-")}`]}
     >
-      <h3 id={`req-${requirement.key}`}>
-        {requirement.label}
-        {requirement.kind === "floor" && (
-          <span class="kindtag">minimum, not an allocation</span>
-        )}
-        {requirement.kind === "cap" && (
-          <span class="kindtag">maximum — stay under this</span>
-        )}
-        <span
-          class:list={[
-            "verdict",
-            verdict(requirement).replaceAll(" ", "-"),
-          ]}
-        >
-          {verdict(requirement)}
-        </span>
-      </h3>
-      <p class="bar">
-        <progress
-          value={Math.min(
-            requirement.countedUnits,
-            requirement.requiredUnits,
+      {/* Named by the requirement AND its standing ("Compulsory core, not
+          started"): the Course Planner has a region with the same label, and
+          two landmarks with one name can't be told apart. */}
+      {/* Closed by default: one line per requirement, so the total stays
+          the headline. A broken ceiling opens itself, so a problem is
+          never folded away. */}
+      <details open={requirement.violated}>
+        <summary>
+          <h3 id={`req-${requirement.key}`}>{requirement.label}</h3>
+          <span class="req-mini">{mini(requirement)}</span>
+          <span
+            id={`verdict-${requirement.key}`}
+            class:list={[
+              "verdict",
+              verdict(requirement).replaceAll(" ", "-"),
+            ]}
+          >
+            {verdict(requirement)}
+          </span>
+        </summary>
+        <div class="req-body">
+          {requirement.kind === "floor" && (
+            <span class="kindtag">minimum, not an allocation</span>
           )}
-          max={requirement.requiredUnits}
-          aria-labelledby={`req-${requirement.key}`}
-        />
-        <span class="figure">
-          {requirement.completedUnits} completed
-          {requirement.plannedUnits > 0 && (
-            <> + {requirement.plannedUnits} planned</>
-          )}{" "}
-          of {requirement.requiredUnits} units
-        </span>
-      </p>
-      {requirement.violated && (
-        <p class="warn">
-          Over this maximum by {requirement.excessUnits} units. The
-          specialisation only allows {requirement.requiredUnits} units
-          from this list, so some of these cannot count toward it.
-        </p>
-      )}
-      {/* The headline (status, bar, figure) stays visible; the rule
-          text and which courses are counting sit behind Details, since
-          Course Planner already shows the rule and most readers only
-          want to know where each requirement stands. */}
-      <details class="more">
-        <summary>Details</summary>
-        {requirement.detail && <p class="rule">{requirement.detail}</p>}
-        <p class="counting">
-          {requirement.countedCodes.length > 0
-            ? `Counting: ${requirement.countedCodes.join(", ")}`
-            : "Nothing counting toward this yet."}
-        </p>
-        {
-          /* The gap between what a rule could accept and what it was
-             credited is exactly the units a tighter rule claimed first. */
-          requirement.kind === "allocating" &&
-            requirement.poolMatchedUnits > requirement.countedUnits && (
-              <p class="elsewhere">
-                {requirement.poolMatchedUnits - requirement.countedUnits}{" "}
-                more matching units are counting toward another requirement.
-              </p>
-            )
-        }
+          {requirement.kind === "cap" && (
+            <span class="kindtag">maximum — stay under this</span>
+          )}
+          <p class="bar">
+            <progress
+              value={Math.min(
+                requirement.countedUnits,
+                requirement.requiredUnits,
+              )}
+              max={requirement.requiredUnits}
+              aria-labelledby={`req-${requirement.key}`}
+            />
+            <span class="figure">
+              {requirement.completedUnits} completed
+              {requirement.plannedUnits > 0 && (
+                <> + {requirement.plannedUnits} planned</>
+              )}{" "}
+              of {requirement.requiredUnits} units
+            </span>
+          </p>
+          {requirement.violated && (
+            <p class="warn">
+              Over this maximum by {requirement.excessUnits} units. The
+              specialisation only allows {requirement.requiredUnits} units
+              from this list, so some of these cannot count toward it.
+            </p>
+          )}
+          {requirement.detail && <p class="rule">{requirement.detail}</p>}
+          <p class="counting">
+            {requirement.countedCodes.length > 0
+              ? `Counting: ${requirement.countedCodes.join(", ")}`
+              : "Nothing counting toward this yet."}
+          </p>
+          {
+            /* The gap between what a rule could accept and what it was
+               credited is exactly the units a tighter rule claimed first. */
+            requirement.kind === "allocating" &&
+              requirement.poolMatchedUnits > requirement.countedUnits && (
+                <p class="elsewhere">
+                  {requirement.poolMatchedUnits - requirement.countedUnits}{" "}
+                  more matching units are counting toward another requirement.
+                </p>
+              )
+          }
+        </div>
       </details>
     </section>
   ))

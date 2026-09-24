@@ -11,7 +11,12 @@ interface Props {
 const { progress, graduated } = Astro.props;
 const total = progress.requirements.find((r) => r.kind === "total");
 const summaryRequired = total?.requiredUnits ?? 96;
-const summaryCounted = total?.countedUnits ?? progress.totalUnits;
+// Completed units lead, as in Degree Progress; planned ones are the lighter
+// second part of the bar.
+const completed = total?.completedUnits ?? progress.completedUnits;
+const planned = total?.plannedUnits ?? progress.plannedUnits;
+const completedPct = Math.min(100, (completed / summaryRequired) * 100);
+const plannedPct = Math.min(100 - completedPct, (planned / summaryRequired) * 100);
 const requirementsShown = progress.requirements.filter((r) => r.kind !== "total");
 const requirementsOnTrack = requirementsShown.filter((r) => r.onTrack).length;
 ---
@@ -25,15 +30,18 @@ const requirementsOnTrack = requirementsShown.filter((r) => r.onTrack).length;
     <p class="summary-congrats">Congratulations! Degree complete</p>
   )}
   <p class="summary-figure">
-    <strong>{summaryCounted}</strong> / {summaryRequired} units
+    <strong>{completed}</strong> / {summaryRequired} units completed
   </p>
-  <progress
-    value={Math.min(summaryCounted, summaryRequired)}
-    max={summaryRequired}
-    aria-labelledby="summary-heading"
-  />
+  <div
+    class="total-bar"
+    role="img"
+    aria-label={`${completed} of ${summaryRequired} units completed, ${planned} more planned`}
+  >
+    <span class="done" style={`width: ${completedPct}%`}></span>
+    <span class="planned" style={`width: ${plannedPct}%`}></span>
+  </div>
   <p class="summary-split">
-    {progress.completedUnits} completed · {progress.plannedUnits} planned
+    + {planned} planned
   </p>
   <p class="summary-reqs">
     {requirementsOnTrack} of {requirementsShown.length} requirements on track

@@ -896,3 +896,40 @@ describe("a specialisation with several rules gets one box, a dropdown per part"
     expect(planner).toContain('<h3 id="cat-mchl-courses"');
   });
 });
+
+describe("Degree Progress leads with completed units, requirements folded", () => {
+  it("shows completed units as the headline, keeps requirements closed, and opens a broken ceiling", async () => {
+    const res = await post(
+      "/api/plans",
+      new URLSearchParams({ label: `fold progress probe ${process.hrtime.bigint()}` }),
+    );
+    const location = res.headers.get("location");
+    if (!location) throw new Error("plan creation did not redirect");
+    const slug = location.replace(/^\/plan\//, "").replace(/\/$/, "");
+    const start = await planHtml(slug);
+    const cmsy = /<option value="(\d+)"[^>]*>\s*Computer Systems/.exec(start)?.[1];
+    if (!cmsy) throw new Error("Computer Systems not found");
+    await post("/api/plan-specialisation", new URLSearchParams({ slug, specialisationId: cmsy }));
+    const page = await planHtml(slug);
+    const add = (code: string, status: string) =>
+      post("/api/plan-items", new URLSearchParams({ slug, courseId: courseIdFor(page, code), status }));
+    await add("COMP6250", "completed");
+    await add("COMP6442", "planned");
+    // Three from the foundation list: 18 units against its 12-unit maximum.
+    // (Added straight over HTTP; the planner itself stops offering them.)
+    for (const code of ["COMP6310", "COMP6330", "COMP6331"]) await add(code, "planned");
+
+    const progress = between(await planHtml(slug), "Degree Progress</h2>", "");
+    const total = between(progress, 'id="req-total"', "</section>");
+    expect(total).toMatch(/<strong>6<\/strong> of 96 units completed/);
+
+    const core = between(progress, 'id="req-mcomp-core"', "</section>");
+    const coreOpen = between(progress, 'aria-labelledby="req-mcomp-core verdict-mcomp-core"', 'id="req-mcomp-core"');
+    expect(coreOpen).toContain("<details>");
+    expect(core).toContain("6 completed + 6 planned of 24 units");
+
+    const capOpen = between(progress, 'aria-labelledby="req-cmsy-foundation verdict-cmsy-foundation"', 'id="req-cmsy-foundation"');
+    expect(capOpen).toContain("<details open");
+    expect(between(progress, 'id="req-cmsy-foundation"', "</section>")).toContain("Over this maximum by 6 units");
+  });
+});
