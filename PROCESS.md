@@ -1,54 +1,37 @@
 # Process overview
 
-<!-- TEMPLATE: this file is a shape to fill in, not a form. Replace everything
-     in it with your own overview, and delete this comment — `pnpm
-     check:evidence` will remind you if it's still here. -->
-
-Written by you, for a reader: how you got from the brief to the harness and
-agentic workflow behind this submission. Markers read this file and follow its
-citations; they don't trawl the repo for evidence you didn't point at.
-
-This file is the shape; the course site's
-[assessment page](https://comp.anu.edu.au/courses/comp4020-agentic-coding-studio/topics/assessment/#what-you-submit)
-is the requirement, and its
-[word counts](https://comp.anu.edu.au/courses/comp4020-agentic-coding-studio/topics/assessment/#word-counts)
-cover every deliverable.
-
 ## What I built
 
-A sentence or two. `README.md` is where the account of what the app is and what
-good means here lives; this file is how you got there.
+A planner that answers "am I on track to graduate?" for the 2025 Master of
+Computing (7706XMCOMP); `README.md` says what good means here.
 
 ## How I got here
 
-The account of the process: how the work actually went, and how you knew the
-result was right. Tell it in whatever order makes it clear. A weekly prototype
-needs a paragraph or two; an assignment needs more.
+I started from the source, not the screen. The degree went in as data
+transcribed from Programs and Courses, every requirement as "N units from a
+pool" [`0988e60`](https://github.com/comp4020-agentic-coding-studio/comp4020-crit7-leahylin/commit/0988e60), with an engine that spends each course once
+[`c96b16a`](https://github.com/comp4020-agentic-coding-studio/comp4020-crit7-leahylin/commit/c96b16a) and all seven specialisations from their own pages
+[`4803855`](https://github.com/comp4020-agentic-coding-studio/comp4020-crit7-leahylin/commit/4803855). Pages came after the rules could be computed.
 
-Cite the record as you go, as links whose text is the commit hash or range and
-whose target is this repo's commit or compare URL, so a reader clicks straight
-to the evidence:
+Using the app was what moved it on. My prompts were about what I saw while
+planning, for example:
 
-- one commit: [`a1b2c3d`](https://github.com/YOUR-ORG/YOUR-REPO/commit/a1b2c3d)
-- a range:
-  [`a1b2c3d...e4f5a6b`](https://github.com/YOUR-ORG/YOUR-REPO/compare/a1b2c3d...e4f5a6b)
+> For a specialisation, you need to complete 4 courses, at least 12 units of
+> them at 8000 level … if 2 courses below 8000 level are already chosen, don't
+> allow choosing another course below 8000 level.
 
-To pair a prompt with the commit it produced, quote the prompt (curated, not a
-full transcript) next to the citation:
+That became pure headroom logic [`b6fe159`](https://github.com/comp4020-agentic-coding-studio/comp4020-crit7-leahylin/commit/b6fe159), and then a fix when
+Computational Foundations showed the limit had to hold across the whole box
+[`680657f`](https://github.com/comp4020-agentic-coding-studio/comp4020-crit7-leahylin/commit/680657f). The same loop gave COMP8715's two semesters, the intake
+selector and the prerequisite warnings [`1727b4d`](https://github.com/comp4020-agentic-coding-studio/comp4020-crit7-leahylin/commit/1727b4d), where re-reading the
+official pages turned up three that contradict each other.
 
-> the prompt, verbatim
+The harness grew from failures the tests couldn't see. A new column kept its
+default on an existing database, so seeding became an upsert
+[`823fac0`](https://github.com/comp4020-agentic-coding-studio/comp4020-crit7-leahylin/commit/823fac0) and rule 1 of `CLAUDE.md`; splitting Data Science
+[`8cb0a9b`](https://github.com/comp4020-agentic-coding-studio/comp4020-crit7-leahylin/commit/8cb0a9b) showed removed data needs the same care [`2f30ec9`](https://github.com/comp4020-agentic-coding-studio/comp4020-crit7-leahylin/commit/2f30ec9).
 
-Screenshots are welcome where one carries the point better than a sentence does.
-Commit the file to this repo and link it with a **relative** path, which is what
-makes it render on GitHub: `![alt text](docs/before.png)`. Images don't count
-towards the word count and don't replace the citation.
-
-## Before you ship
-
-`pnpm check:evidence` verifies that this comment is gone, that your citations
-resolve to real commits, that a crit week's reflection entry is in
-`reflections/`, and that your `CLAUDE.md` is there. It checks that your account
-is traceable, not that it is good: that is the marker's call.
-
-Images aren't checked: unlike a citation whose SHA doesn't resolve, a broken
-image is visible the moment this file is rendered on GitHub.
+**How I knew it was right.** Specs run against the built server; for each new
+rule I broke the code and watched a spec go red (rule 2); I used the running
+app and read the page back (rule 3); and each commit was built and tested on
+its own before the next, e.g. [`282babb...1727b4d`](https://github.com/comp4020-agentic-coding-studio/comp4020-crit7-leahylin/compare/282babb...1727b4d).
