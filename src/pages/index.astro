@@ -47,17 +47,13 @@ const plans = listPlans().map((plan) => {
     <main>
       <h1>Am I on track to graduate?</h1>
       {
-        /* Leads with the scoping, not the degree description: every semester
-          this app knows about — the intake choice, the dropdowns, the
-          graduation date — is built for a 2025 intake specifically, not a
-          general calendar. Someone who started a different year would get
-          wrong semester labels and a wrong graduation date, so this has to
-          be the first thing said, not a footnote. */
+        /* Leads with the scoping: every semester this app knows about is
+          built for a 2025 intake, so someone who started another year would
+          get wrong semesters and a wrong graduation date. Kept to one line:
+          the degree and the two intakes are spelled out in Start a plan. */
       }
       <p class="scope-banner">
-        Built for a student starting the two-year full-time Master of Computing
-        (7706XMCOMP) at ANU in <strong>2025 Semester 1</strong> or{" "}
-        <strong>2025 Semester 2</strong>.
+        For ANU Master of Computing students starting in <strong>2025</strong>.
       </p>
 
       {
